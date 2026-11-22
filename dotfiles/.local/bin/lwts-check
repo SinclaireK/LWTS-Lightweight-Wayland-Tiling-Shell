@@ -1,0 +1,30 @@
+#!/usr/bin/luajit
+-- One-shot health check of the rice: Niri config, LWTS process, memory, fresh QML warnings, DRM spam.
+-- Usage: lwts-check   (exit 1 if something is wrong)
+local function sh(c) local p = io.popen(c .. " 2>/dev/null"); local o = p:read("*a"); p:close(); return o end
+local bad = 0
+local function line(ok, name, info) if not ok then bad = bad + 1 end; print((ok and "ok  " or "FAIL") .. "  " .. name .. (info and info ~= "" and ("  " .. info) or "")) end
+
+local errs = sh("niri validate -c " .. os.getenv("HOME") .. "/.config/niri/config.kdl 2>&1 | grep -iE 'error|invalid' | head -2"):gsub("%s+$", "")
+line(errs == "", "niri config", errs)
+
+local pids = {}
+for p in sh("pgrep -x qs; pgrep -x quickshell"):gmatch("%d+") do pids[#pids + 1] = p end
+line(#pids == 1, "LWTS process", #pids .. " running")
+for _, p in ipairs(pids) do
+  local kb = tonumber(sh("awk '/VmRSS/{print $2}' /proc/" .. p .. "/status")) or 0
+  line(kb < 300 * 1024, "LWTS memory", math.floor(kb / 1024) .. " MB (limit 300)")
+end
+
+local warns = sh([[qs log -c lwts | sed 's/\x1b\[[0-9;]*m//g' | grep -E 'WARN|ERROR' | grep -vE 'notification|Registration will|StatusNotifierItem|host portal' | tail -5]]):gsub("%s+$", "")
+line(warns == "", "LWTS warnings", warns ~= "" and ("\n" .. warns) or "")
+
+-- only failures since the previous check (count kept in ~/.cache/lwts): a past burst does not stay red
+local mark = os.getenv("HOME") .. "/.cache/lwts/check-drm"
+local total = tonumber(sh("journalctl --user -b -q -g 'failed to commit' | wc -l")) or 0
+local mf = io.open(mark); local from = tonumber(mf and mf:read("*l") or "") or 0; if mf then mf:close() end
+if from > total then from = 0 end   -- new boot
+mf = io.open(mark, "w"); if mf then mf:write(total, "\n"); mf:close() end
+line(total - from == 0, "DRM commits (since last check)", (total - from) .. " failed")
+
+os.exit(bad == 0 and 0 or 1)

@@ -1,0 +1,20 @@
+#!/usr/bin/luajit
+-- lwts-sync-git: copy dotfiles/ (symlinks into the live system) -> git/dotfiles/ (real files for GitHub). One way, never edit git/ by hand.
+--   lwts-sync-git          dry run: list what would change (default, writes nothing)
+--   lwts-sync-git --apply  do it (git/.git is never touched; no commit, no push)
+local P = os.getenv("HOME") .. "/Projects/LWTS"
+local EXCLUDES = { ".git/", ".removed/", "__pycache__/", "*.before-*", "*.bak", "*.pyc", "*.log", "*.key", ".omniroute*", ".smb*", "*token*", "*secret*",
+  "sources.toml", "game-env/", "bookmarks", "/.config/niri/outputs.kdl", "/.config/niri/lwts.kdl", "/.config/themes/settings.toml", "settings.toml.prev", ".uuid", "*.kdl.before-*" }
+local ex = {}
+for _, e in ipairs(EXCLUDES) do ex[#ex + 1] = "--exclude='" .. e .. "'" end
+local apply = arg[1] == "--apply"
+-- -L: follow the symlinks of dotfiles/ so git/ gets real files; --delete: drop what disappeared (protected: .git)
+local cmd = ("rsync -rLtv%s --delete --itemize-changes %s '%s/dotfiles/' '%s/git/dotfiles/'"):format(apply and "" or "n", table.concat(ex, " "), P, P)
+os.execute(cmd .. " | grep -v '^$' | grep -v '^sending\\|^sent\\|^total' | head -60")
+if apply then -- files holding an absolute path to the home folder (qt confs: theme.py rewrites it on apply; the portal D-Bus service): keep a placeholder in git, install.lua puts the real home back
+  local home = os.getenv("HOME")
+  for _, f in ipairs({ ".config/qt5ct/qt5ct.conf", ".config/qt6ct/qt6ct.conf", ".local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.lwts.service" }) do
+    os.execute(("sed -i 's#%s#@HOME@#g' '%s/git/dotfiles/%s'"):format(home, P, f))
+  end
+end
+print(apply and "\nsynced -> " .. P .. "/git (nothing committed)" or "\ndry run only; --apply to write")

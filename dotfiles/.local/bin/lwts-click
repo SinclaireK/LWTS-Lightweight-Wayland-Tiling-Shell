@@ -1,0 +1,18 @@
+#!/usr/bin/luajit
+-- Click test for agents: lwts-click X Y [left|right|move] [shot WxH]
+-- Cursor is placed by Hyprland (exact, no pointer acceleration), the button is pressed by ydotool (ydotoold, user socket).
+-- "shot WxH" saves /tmp/click.png centred on the point, 0.6 s after the click (animations settle).
+local x, y, btn = tonumber(arg[1]), tonumber(arg[2]), arg[3] or "left"
+if not x or not y then io.stderr:write("usage: click X Y [left|right|move] [shot WxH]\n") os.exit(2) end
+local function run(c) return os.execute(c .. " >/dev/null 2>&1") end
+run(string.format([[hyprctl eval 'hl.dispatch(hl.dsp.cursor.move({x=%d, y=%d}))']], x, y))
+os.execute("sleep 0.15")
+local code = ({ left = "0xC0", right = "0xC1", middle = "0xC2" })[btn]
+if code then run("ydotool click " .. code) end
+if arg[4] == "shot" then
+  local w, h = (arg[5] or "600x300"):match("(%d+)x(%d+)")
+  w, h = tonumber(w), tonumber(h)
+  os.execute("sleep 0.6")
+  run(string.format("grim -g '%d,%d %dx%d' /tmp/click.png", math.max(0, x - math.floor(w / 2)), math.max(0, y - math.floor(h / 2)), w, h))
+  print("/tmp/click.png")
+end

@@ -1,0 +1,15 @@
+#!/bin/bash
+# lwts-shot <section> <tab> <name> : open Settings at section/tab, screenshot the panel area, close.
+# Output: ~/.cache/lwts/shots/<name>.png . Sections: 0 Pinned 1 Appearance 2 Features 3 Sound 4 Network 5 Devices 6 Input 7 Notifications 8 Apps 9 Gaming 10 System.
+# The test IPC `launcher tab` may highlight a wrong row (firstRow is computed before rows update) - that is a test artifact.
+D="$HOME/.cache/lwts/shots"; mkdir -p "$D"
+# no mouse move: ydotool --absolute passes the (0,0) hot corner and opens the niri overview (D99)
+if [[ "$1" =~ ^[0-9]+$ ]]; then
+  qs -c lwts ipc call launcher tab "$1" "$2" >/dev/null
+else
+  qs -c lwts ipc call launcher tabId "$1" "$2" >/dev/null
+fi
+sleep 1.2
+grim -g "700,0 1200x800" "$D/$3.png"
+qs -c lwts ipc call launcher toggle >/dev/null; sleep 0.5
+echo "$D/$3.png"

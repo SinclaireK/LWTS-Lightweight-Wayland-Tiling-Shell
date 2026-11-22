@@ -1,0 +1,188 @@
+#!/usr/bin/luajit
+-- lwts: one entry point for working on LWTS (shell, Niri, themes). Start every session with `lwts status`.
+--   lwts status                     where things stand: shell, errors, helper install, open debts, last backups
+--   lwts backup <file> [tag]        copy <file> to ~/Projects/LWTS/backup/files/<mirrored path>.before-<tag>
+--   lwts restore <file> [tag]       put the newest (or <tag>) backup back (shows what it replaces)
+--   lwts reload                     re-read the QML (ipc shell reload) and print only NEW warnings/errors; exit 1 if any
+--   lwts restart                    FULL shell restart without a second bar (see the trap in ai/workflow.md)
+--   lwts log [n]                    last n (default 15) shell log lines without the known noise
+--   lwts open <section> [tab]       open Settings there (ipc launcher tab); `lwts close` toggles the panel
+--   lwts shot <section> <tab> <name> screenshot of the panel area -> ~/.cache/lwts/shots/<name>.png (screen behind it is visible too)
+--   lwts smoke [--shots]            every Settings section/tab, new warnings only
+--   lwts debt list|add "text" [area]|done <id>   the checklist ~/Projects/LWTS/ai/debts.md (unverified / not built)
+-- Rules this tool follows: backups before edits, no rm inside ~/Projects/LWTS, nothing destructive; it never sends keys.
+
+local HOME = os.getenv("HOME")
+local PROJ = HOME .. "/Projects/LWTS"
+local BIN = HOME .. "/.local/bin"
+local BACK = PROJ .. "/backup/files"
+local DEBTS = PROJ .. "/ai/debts.md"
+
+local function sh(cmd) local p = io.popen(cmd .. " 2>&1"); local o = p:read("*a"); p:close(); return o end
+local function ok(cmd) local r = os.execute(cmd .. " >/dev/null 2>&1"); return r == 0 or r == true end
+local function q(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
+local function read(p) local f = io.open(p); if not f then return nil end; local s = f:read("*a"); f:close(); return s end
+local function write(p, s) local f = assert(io.open(p, "w")); f:write(s); f:close() end
+local function exists(p) return ok("test -e " .. q(p)) end
+local function die(m) io.stderr:write("lwts: ", m, "\n"); os.exit(2) end
+
+-- ---- backups -------------------------------------------------------------------------------------------------------
+local MIRRORS = { { HOME .. "/.config/quickshell/lwts/", "lwts/" },
+                  { HOME .. "/.config/themes/", "themes/" }, { HOME .. "/.config/niri/", "niri/" } }
+local function real(p) return sh("realpath -m " .. q(p)):gsub("%s+$", "") end
+local function mirrored(path)
+  local r = real(path)
+  for _, m in ipairs(MIRRORS) do if r:sub(1, #m[1]) == m[1] then return BACK .. "/" .. m[2] .. r:sub(#m[1] + 1) end end
+  return BACK .. "/other/" .. r:gsub("^/", ""):gsub("/", "_")
+end
+
+local function backup(path, tag)
+  if not path or not exists(path) then die("no such file: " .. tostring(path)) end
+  tag = tag or os.date("%Y%m%d-%H%M")
+  local dst = mirrored(path) .. ".before-" .. tag
+  os.execute("mkdir -p " .. q(dst:match("^(.*)/[^/]*$")))
+  if not ok("cp -p " .. q(real(path)) .. " " .. q(dst)) then die("copy failed") end
+  print(dst)
+end
+
+local function backups_of(path)
+  local base = mirrored(path)
+  local out = sh("ls -t " .. q(base) .. ".before-* 2>/dev/null")
+  local l = {}; for f in out:gmatch("[^\n]+") do l[#l + 1] = f end
+  return l
+end
+
+local function restore(path, tag)
+  local l = backups_of(path)
+  if #l == 0 then die("no backups of " .. path) end
+  local pick = l[1]
+  if tag then pick = nil; for _, f in ipairs(l) do if f:match("%.before%-" .. tag:gsub("%p", "%%%0") .. "$") then pick = f; break end end end
+  if not pick then die("no backup tagged " .. tag .. "; have:\n  " .. table.concat(l, "\n  ")) end
+  print("replacing " .. path .. " with " .. pick)
+  io.write(sh("diff -q " .. q(real(path)) .. " " .. q(pick)))
+  backup(path, "restore-" .. os.date("%H%M%S"))   -- what is there now is not lost either
+  if not ok("cp -p " .. q(pick) .. " " .. q(real(path))) then die("restore failed") end
+  print("restored")
+end
+
+-- ---- shell log -----------------------------------------------------------------------------------------------------
+local NOISE = "hypr%-stacking"
+local function log_lines() local t = {}; for l in sh("qs -c lwts log"):gmatch("[^\n]+") do t[#t + 1] = l end; return t end
+local function strip(l) return (l:gsub("\27%[[%d;]*m", "")) end
+local function problems(lines, from)
+  local out = {}
+  for i = from + 1, #lines do local l = strip(lines[i]); if (l:find("WARN") or l:find("ERROR")) and not l:find(NOISE) then out[#out + 1] = l end end
+  return out
+end
+local function shell_alive() return ok("pgrep -x qs") or ok("pgrep -x quickshell") end
+
+local function reload()
+  local before = #log_lines()
+  if not shell_alive() then die("the shell is not running (start: niri msg action spawn -- qs -c lwts -d)") end
+  local out = sh("qs -c lwts ipc call shell reload"); local bad_ipc = not ok("qs -c lwts ipc show")
+  if bad_ipc or out:find("Not ready") or out:find("rror") then
+    print("reload FAILED: IPC not answering (" .. (out:gsub("%s+$", "")):sub(1, 120) .. "); try: lwts restart"); return 1
+  end
+  os.execute("sleep 3")
+  local bad = problems(log_lines(), before)
+  if #bad == 0 then print("reload ok: no new warnings or errors"); return 0 end
+  local seen, n = {}, 0
+  for _, l in ipairs(bad) do if not seen[l] then seen[l] = true; n = n + 1; if n <= 8 then print(l) end end end
+  print(("reload: %d new problem line(s), %d distinct (first 8 shown)"):format(#bad, n)); return 1
+end
+
+-- ---- full restart ---------------------------------------------------------------------------------------------------
+-- Autostart runs the shell as `bash -c "qs -c lwts || qs -c rice || ..."`: kill only the shell and that wrapper starts the OLD
+-- shell (qs -c rice) next to the new one = two bars. So: stop the wrapper first, then the shell, then start LWTS.
+local function restart()
+  for pid, args in sh("ps -eo pid=,args="):gmatch("%s*(%d+)%s+([^\n]*)") do
+    if args:find("qs -c lwts ||", 1, true) and args:find("bash", 1, true) then os.execute("kill " .. pid) end
+  end
+  os.execute("pkill -x qs; pkill -x quickshell; sleep 1")   -- a shell that respawned itself runs as `quickshell`, not `qs`: it survived and gave two bars
+  if os.execute("command -v niri >/dev/null 2>&1") == 0 then   -- Niri session: spawn through the compositor
+    os.execute("niri msg action spawn -- qs -c lwts -d >/dev/null")
+  else
+    os.execute("hyprctl eval 'hl.dispatch(hl.dsp.exec_cmd(\"qs -c lwts -d\"))' >/dev/null")
+  end
+  os.execute("sleep 3")
+  local n = tonumber(sh("pgrep -c -x 'qs|quickshell'"):match("%d+")) or 0
+  print(n == 1 and "restarted: one shell running" or ("WARNING: " .. n .. " qs processes: " .. sh("pgrep -ax 'qs|quickshell'")))
+end
+
+-- ---- debts ---------------------------------------------------------------------------------------------------------
+local function debts() return read(DEBTS) or "" end
+local function debt_lines() local t = {}; for l in debts():gmatch("[^\n]*\n?") do if l ~= "" then t[#t + 1] = (l:gsub("\n$", "")) end end; return t end
+local function debt_list()
+  local n = 0
+  for _, l in ipairs(debt_lines()) do if l:match("^%- %[ %] ") then print(l); n = n + 1 end end
+  print(("(%d open)"):format(n))
+end
+local function debt_add(text, area)
+  if not text then die("usage: rice debt add \"text\" [area]") end
+  local max = 0; for id in debts():gmatch("%- %[.%] D(%d+)") do max = math.max(max, tonumber(id)) end
+  local line = ("- [ ] D%02d [%s] %s"):format(max + 1, area or "general", text)
+  local f = assert(io.open(DEBTS, "a")); f:write(line, "\n"); f:close(); print(line)
+end
+local function debt_done(id)
+  id = (id or ""):upper(); if not id:match("^D%d+$") then die("usage: rice debt done D12") end
+  local out, hit = {}, false
+  for _, l in ipairs(debt_lines()) do
+    if l:match("^%- %[ %] " .. id .. " ") then l = l:gsub("^%- %[ %]", "- [x]", 1) .. " (done " .. os.date("%F") .. ")"; hit = true end
+    out[#out + 1] = l
+  end
+  if not hit then die("no open debt " .. id) end
+  write(DEBTS, table.concat(out, "\n") .. "\n"); print("done " .. id)
+end
+
+-- ---- status --------------------------------------------------------------------------------------------------------
+local function status()
+  local host = (io.open("/etc/hostname") and io.open("/etc/hostname"):read("*l") or "?"):gsub("%s+", "")
+  print("== lwts status  " .. os.date("%F %H:%M") .. "  host " .. host)
+  local alive = shell_alive()
+  local mem = alive and sh("ps -o rss= -C qs | head -1"):gsub("%s+", "") or ""
+  local nq = tonumber(sh("pgrep -cx qs"):match("%d+")) or 0
+  if nq > 1 then print("! " .. nq .. " qs processes = two bars (old fallback shell): " .. sh("pgrep -ax qs"):gsub("\n", " | ")) end
+  print(("shell     : %s%s"):format(alive and "running" or "NOT RUNNING", mem ~= "" and (" · " .. math.floor(tonumber(mem) / 1024) .. " MB (limit 300; a full restart cures creep)") or ""))
+  local lines = alive and log_lines() or {}
+  local bad = problems(lines, 0); local seen, d = {}, 0
+  for _, l in ipairs(bad) do if not seen[l] then seen[l] = true; d = d + 1 end end
+  print(("shell log : %d WARN/ERROR line(s), %d distinct since the shell started (old ones stay until a full restart)"):format(#bad, d))
+  local nv = sh("niri validate -c " .. HOME .. "/.config/niri/config.kdl 2>&1 | grep -iE 'error|invalid' | head -2"):gsub("%s+$", "")
+  print("niri      : " .. (nv == "" and "config valid" or nv:sub(1, 200)))
+  local src, inst = HOME .. "/.local/bin/lwts-priv", "/usr/local/libexec/lwts-priv"
+  print("lwts-priv : " .. (not exists(inst) and "NOT INSTALLED (see settings_status.md §4)" or ok("cmp -s " .. src .. " " .. inst) and "installed, same as the source" or "installed but OLDER than ~/.local/bin/lwts-priv -> ask the user: ! sudo install -m 755 -o root -g root ~/.local/bin/lwts-priv /usr/local/libexec/lwts-priv"))
+  local tools, miss = { "grim", "ydotool", "pactl", "niri", "qs", "luajit", "python3", "pkexec", "nmcli" }, {}
+  for _, t in ipairs(tools) do if not ok("command -v " .. t) then miss[#miss + 1] = t end end
+  print("tools     : " .. (#miss == 0 and "all present" or "MISSING " .. table.concat(miss, ", ")))
+  local open = 0; for _ in debts():gmatch("%- %[ %] D%d+") do open = open + 1 end
+  print(("debts     : %d open (lwts debt list)"):format(open))
+  local rec = sh("find " .. q(BACK) .. " -type f -newermt '-1 day' 2>/dev/null | wc -l"):gsub("%s+", "")
+  print("backups   : " .. rec .. " file(s) in the last 24 h (" .. BACK .. ")")
+  print("\nnext: read ~/Projects/LWTS/ai/settings_status.md; open work = lwts debt list; after an edit: rice backup first, rice reload, rice smoke")
+end
+
+-- ---- settings tools ------------------------------------------------------------------------------------------------
+local function open(section, tab)
+  if not section then die("usage: lwts open <section> [tab]") end
+  -- no mouse move: ydotool --absolute passes the (0,0) hot corner and opens the niri overview (D99)
+  os.execute(("qs -c lwts ipc call launcher tab %d %d >/dev/null"):format(tonumber(section) or 1, tonumber(tab) or 0))
+end
+
+local cmd = arg[1]
+if cmd == "status" or cmd == nil then status()
+elseif cmd == "backup" then backup(arg[2], arg[3])
+elseif cmd == "restore" then restore(arg[2], arg[3])
+elseif cmd == "reload" then os.exit(reload())
+elseif cmd == "restart" then restart()
+elseif cmd == "log" then local l = log_lines(); local n = tonumber(arg[2]) or 15; local shown = {}
+  for _, x in ipairs(l) do if not x:find(NOISE) then shown[#shown + 1] = strip(x) end end
+  for i = math.max(1, #shown - n + 1), #shown do print(shown[i]) end
+elseif cmd == "open" then open(arg[2], arg[3])
+elseif cmd == "close" then os.execute("qs -c lwts ipc call launcher toggle")
+elseif cmd == "shot" then os.execute(("%s/lwts-shot %s %s %s"):format(BIN, tostring(arg[2] or 1), tostring(arg[3] or 0), tostring(arg[4] or "shot")))
+elseif cmd == "smoke" then os.exit(os.execute(BIN .. "/lwts-smoke " .. (arg[2] or "")) == 0 and 0 or 1)
+elseif cmd == "debt" then
+  if arg[2] == "list" or arg[2] == nil then debt_list() elseif arg[2] == "add" then debt_add(arg[3], arg[4]) elseif arg[2] == "done" then debt_done(arg[3]) else die("lwts debt list|add|done") end
+else
+  print(read(debug.getinfo(1, "S").source:sub(2)):match("^#![^\n]*\n(.-)\n\nlocal HOME"):gsub("%-%- ?", ""))
+end
