@@ -2,6 +2,8 @@
 
 Lightweight Wayland Tiling Shell: a Quickshell shell for the Niri compositor (bar, launcher, quick settings, notifications, lock screen, settings app). The repo is a mirror of the live config, kept in `dotfiles/`.
 
+> **Work in progress.** LWTS is still raw and under active development. Installing it is not recommended yet. For now, feel free to just look at the screenshots and drool.
+
 ![LWTS](docs/screenshots/collage.png)
 
 ## Dependencies
