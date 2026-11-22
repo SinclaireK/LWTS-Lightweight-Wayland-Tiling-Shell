@@ -1,7 +1,7 @@
 # LWTS packages (Arch repos; every name checked with `pacman -Si`, 2026-11-18).
 # python-gobject: lwts-portal (screen-cast backend); python-numpy: theme.py, backdrop.py, shot-rects.py.
-# One name per line. Sections: [core] always, [optional] only with `install.lua --optional`.
-# Read by install.lua; keep the README list in line with this file.
+# One name per line. Sections: [core] always needed, [optional] only for the matching modules and settings pages.
+# Keep the README list in line with this file.
 
 [core]
 niri
