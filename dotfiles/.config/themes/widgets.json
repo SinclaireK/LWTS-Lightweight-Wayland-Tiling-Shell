@@ -1,0 +1,24 @@
+[
+  {
+    "id": "schedule",
+    "label": "Schedule",
+    "icon": "graduation-cap",
+    "cmd": [
+      "luajit",
+      "$P/calendar.lua",
+      ""
+    ],
+    "every": 60
+  },
+  {
+    "id": "weather",
+    "label": "Weather",
+    "icon": "cloud-sun",
+    "cmd": [
+      "sh",
+      "$P/weather.sh",
+      ""
+    ],
+    "every": 1800
+  }
+]

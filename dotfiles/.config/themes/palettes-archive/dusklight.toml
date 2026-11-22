@@ -1,0 +1,12 @@
+name = "Dusklight"
+mode = "dark"
+
+background = "#04142e"
+foreground = "#99dfff"
+accent = "#ff7f00"
+tertiary = "#00d4ff"
+selection = "#722b01"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#0a2a50", "#ff5f3f", "#b4bb63", "#fff86b", "#009eff", "#c77dff", "#00d4ff", "#79a1b4"]
+ansi_bright = ["#3a6a8a", "#ff8c66", "#d0d68a", "#fffaa0", "#4dbaff", "#d9a3ff", "#00ffff", "#99ffff"]

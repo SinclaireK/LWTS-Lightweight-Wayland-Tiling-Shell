@@ -1,0 +1,504 @@
+#!/usr/bin/luajit
+-- lwts-padd: LWTS gamepad layer, a root system service (/usr/local/bin/lwts-padd, lwts-padd.service).
+--
+-- While $LWTS_RUN/lwts-padlayer exists (the user toggles it from Settings, no root needed):
+--   * 72-lwts-padlayer.rules strips uaccess from physical joysticks; this daemon also clears leftover ACLs, so no user
+--     process (game, Steam, Proton, SDL) can open them at all;
+--   * each physical pad is grabbed and replaced by a virtual "Microsoft X-Box 360 pad" with the LWTS processing:
+--     centre + reach (pad_cal_<vid>_<pid>), radial inner / outer deadzone, response curve, anti-deadzone, trigger travel,
+--     kernel jitter filter (pad_tune_<vid>_<pid>), all read from the user's settings.toml and re-read on change;
+--   * rumble sent to the virtual pad is forwarded to the real one.
+-- Monitor: /run/lwts-pad/<eventN>.sock streams the untouched values of a held pad to LWTS Settings (live view, calibration
+-- wizard) in the `lwts-pad watch` format ("abs code min max fuzz flat value", "key code", "ready", then "a code v" /
+-- "k code v", ~60 per second). Games never see it (it is not an input device).
+-- State for the shell: /run/lwts-pad/state ("layer on|off", "pad", "range", "virt", "mon" lines), read by `lwts-pad list`.
+local ffi = require("ffi")
+local bit = require("bit")
+ffi.cdef [[
+typedef struct { long sec, usec; uint16_t type, code; int32_t value; } ev_t;
+typedef struct { int32_t value, minimum, maximum, fuzz, flat, resolution; } absinfo_t;
+typedef struct { uint16_t bustype, vendor, product, version; } input_id_t;
+typedef struct { input_id_t id; char name[80]; uint32_t ff_effects_max; } uinput_setup_t;
+typedef struct { uint16_t code; uint16_t pad_; absinfo_t absinfo; } uinput_abs_setup_t;
+typedef struct { uint16_t type; int16_t id; uint16_t direction; uint16_t tbutton, tinterval; uint16_t length, delay; uint16_t pad_; uint8_t u[32]; } ff_t;
+typedef struct { uint32_t request_id; int32_t retval; ff_t effect; ff_t old; } ff_upload_t;
+typedef struct { uint32_t request_id; int32_t retval; uint32_t effect_id; } ff_erase_t;
+typedef struct { int fd; short events, revents; } pollfd_t;
+typedef struct { int wd; uint32_t mask, cookie, len; } inev_t;
+int open(const char *p, int f); int close(int fd);
+long read(int fd, void *b, size_t n); long write(int fd, const void *b, size_t n);
+int ioctl(int fd, unsigned long req, ...); int poll(pollfd_t *f, unsigned long n, int t);
+int inotify_init1(int flags); int inotify_add_watch(int fd, const char *path, uint32_t mask);
+int access(const char *p, int mode);
+typedef struct { uint16_t family; char path[108]; } sockaddr_un_t;
+int socket(int d, int t, int p); int bind(int fd, const void *a, uint32_t l); int listen(int fd, int n);
+int accept4(int fd, void *a, void *l, int f); long send(int fd, const void *b, size_t n, int f);
+int unlink(const char *p); int chmod(const char *p, uint32_t m);
+typedef struct { long s, ns; } ts_t; int clock_gettime(int c, ts_t *t);
+]]
+local C = ffi.C
+
+-- ---- constants ----
+local function IOC(dir, typ, nr, size) return bit.bor(bit.lshift(dir, 30), bit.lshift(size, 16), bit.lshift(typ, 8), nr) end
+local EVIOCGBIT = function(ev, len) return IOC(2, 0x45, 0x20 + ev, len) end
+local EVIOCGABS = function(a) return IOC(2, 0x45, 0x40 + a, 24) end
+local EVIOCSABS = function(a) return IOC(1, 0x45, 0xc0 + a, 24) end
+local EVIOCGRAB, EVIOCSFF, EVIOCRMFF = IOC(1, 0x45, 0x90, 4), IOC(1, 0x45, 0x80, 48), IOC(1, 0x45, 0x81, 4)
+local UI_DEV_CREATE, UI_DEV_SETUP, UI_ABS_SETUP = IOC(0, 0x55, 1, 0), IOC(1, 0x55, 3, 92), IOC(1, 0x55, 4, 28)
+local UI_GET_SYSNAME = IOC(2, 0x55, 44, 64)
+local UI_SET_EVBIT, UI_SET_KEYBIT, UI_SET_ABSBIT, UI_SET_FFBIT = IOC(1, 0x55, 100, 4), IOC(1, 0x55, 101, 4), IOC(1, 0x55, 103, 4), IOC(1, 0x55, 107, 4)
+local UI_BEGIN_FF_UPLOAD, UI_END_FF_UPLOAD = IOC(3, 0x55, 200, 104), IOC(1, 0x55, 201, 104)
+local UI_BEGIN_FF_ERASE, UI_END_FF_ERASE = IOC(3, 0x55, 202, 12), IOC(1, 0x55, 203, 12)
+local EV_SYN, EV_KEY, EV_ABS, EV_FF, EV_UINPUT, FF_RUMBLE = 0, 1, 3, 0x15, 0x0101, 0x50
+local O_RDWR, O_NONBLOCK, O_CLOEXEC = 2, 0x800, 0x80000
+local HOME = os.getenv("LWTS_HOME") or os.getenv("HOME")
+local RUN = os.getenv("LWTS_RUN") or os.getenv("XDG_RUNTIME_DIR") or "/run/user/1000"
+local THEMES = HOME .. "/.config/themes"
+local SETTINGS = THEMES .. "/settings.toml"
+local FLAG = RUN .. "/lwts-padlayer"
+local STATE_DIR = os.getenv("RUNTIME_DIRECTORY") or "/run/lwts-pad"
+local TUNE = { ldz = 0, rdz = 0, lout = 0, rout = 0, lts = 0, rts = 0, lte = 100, rte = 100, lcurve = 1, rcurve = 1, lad = 0, rad = 0, jit = 1.5 }
+
+-- ---- small helpers ----
+local function log(m) io.stderr:write(m .. "\n") end
+local function slurp(p) local f = io.open(p) if not f then return nil end local s = f:read("*a") f:close() return s end
+local function exists(p) return C.access(p, 0) == 0 end
+local function int(v) return ffi.cast("int", v) end
+local function clamp(v, a, b) return v < a and a or v > b and b or v end
+local function round(v) return math.floor(v + 0.5) end
+local function sh(cmd) os.execute(cmd .. " >/dev/null 2>&1") end
+local tsbuf = ffi.new("ts_t")
+local function now_ms() C.clock_gettime(1, tsbuf) return tonumber(tsbuf.s) * 1000 + tonumber(tsbuf.ns) / 1e6 end
+local function bits(fd, ev, nbytes)
+  local b = ffi.new("uint8_t[?]", nbytes)
+  if C.ioctl(fd, EVIOCGBIT(ev, nbytes), b) < 0 then return {} end
+  local t = {}
+  for i = 0, nbytes * 8 - 1 do if bit.band(b[bit.rshift(i, 3)], bit.lshift(1, bit.band(i, 7))) ~= 0 then t[#t + 1] = i end end
+  return t
+end
+local evbuf = ffi.new("ev_t")
+local function emit(fd, t, c, v) evbuf.type = t evbuf.code = c evbuf.value = v C.write(fd, evbuf, ffi.sizeof("ev_t")) end
+
+-- ---- config (format shared with services/PadCal.qml) ----
+local XBOX_KEYS = { 304, 305, 307, 308, 310, 311, 314, 315, 316, 317, 318 }   -- A B X Y LB RB Back Start Guide L3 R3
+local XBOX_KEY = {} for _, k in ipairs(XBOX_KEYS) do XBOX_KEY[k] = true end
+local BTN_DEFAULT = { ["054c:0268"] = "307:308,308:307" }   -- DualShock 3: hid-sony Triangle = BTN_NORTH, which an Xbox pad calls X
+local function config(id)
+  local s = "\n" .. (slurp(SETTINGS) or "")
+  local key = (id:gsub(":", "_"))
+  local cal, tune, btn = {}, {}, {}
+  for k, v in pairs(TUNE) do tune[k] = v end
+  for e in (s:match('\npad_cal_' .. key .. '%s*=%s*"([^"]*)"') or ""):gmatch("[^,]+") do
+    local f = {} for n in e:gmatch("[^:]+") do f[#f + 1] = tonumber(n) end
+    if #f == 5 or #f == 6 then cal[f[1]] = { fmin = f[2], fmax = f[3], min = f[4], max = f[5], c = f[6] } end   -- c: measured centre (reach may differ per side)
+  end
+  local bs = s:match('\npad_btn_' .. key .. '%s*=%s*"([^"]*)"')
+  if bs == nil or bs == "" then bs = BTN_DEFAULT[id] or "" end   -- no map saved yet (keep in step with PadCal.btnDefaults)
+  for e in bs:gmatch("[^,]+") do   -- physical key : key the game sees
+    local a, b = e:match("^(%d+):(%d+)$")
+    if a then btn[tonumber(a)] = tonumber(b) end
+  end
+  for k, v in (s:match('\npad_tune_' .. key .. '%s*=%s*"([^"]*)"') or ""):gmatch("(%w+):([%-%d%.]+)") do
+    if TUNE[k] ~= nil then tune[k] = tonumber(v) end
+  end
+  return cal, tune, btn
+end
+
+-- ---- discovery: physical joysticks (hidden ones carry LWTS_PAD=1) ----
+local function physical()
+  local out = {}
+  local ls = io.popen("ls /sys/class/input/ 2>/dev/null")
+  for n in ls:lines() do
+    if n:match("^event%d+$") then
+      local rp = io.popen("readlink -f /sys/class/input/" .. n) local real = rp:read("*l") or "" rp:close()
+      local dev = slurp("/sys/class/input/" .. n .. "/dev")
+      local udev = dev and slurp("/run/udev/data/c" .. dev:gsub("%s", "")) or ""
+      if not real:find("/virtual/", 1, true) and (udev:find("E:ID_INPUT_JOYSTICK=1", 1, true) or udev:find("E:LWTS_PAD=1", 1, true)) then
+        local base = "/sys/class/input/" .. n .. "/device/"
+        local id = (slurp(base .. "id/vendor") or "0000"):gsub("%s", "") .. ":" .. (slurp(base .. "id/product") or "0000"):gsub("%s", "")
+        out[#out + 1] = { path = "/dev/input/" .. n, name = (slurp(base .. "name") or "Gamepad"):gsub("%s+$", ""), id = id, sys = real }
+      end
+    end
+  end
+  ls:close()
+  return out
+end
+
+-- ---- virtual devices ----
+local function event_node(fd)   -- /dev/input/eventN of a uinput device (appears a moment after creation)
+  local name = ffi.new("char[64]")
+  if C.ioctl(fd, UI_GET_SYSNAME, name) < 0 then return "" end
+  local dir = "/sys/devices/virtual/input/" .. ffi.string(name)
+  for _ = 1, 40 do
+    local ls = io.popen("ls " .. dir .. " 2>/dev/null")
+    for n in ls:lines() do if n:match("^event%d+$") then ls:close() return "/dev/input/" .. n end end
+    ls:close()
+    sh("sleep 0.025")
+  end
+  return ""
+end
+local function make_virtual(name, idv, idp, keys, axes, ff)   -- axes: { code = { min, max } }
+  local v = C.open("/dev/uinput", O_RDWR + O_NONBLOCK + O_CLOEXEC)
+  if v < 0 then log("cannot open /dev/uinput") return nil end
+  C.ioctl(v, UI_SET_EVBIT, int(EV_SYN)) C.ioctl(v, UI_SET_EVBIT, int(EV_KEY)) C.ioctl(v, UI_SET_EVBIT, int(EV_ABS))
+  for _, k in ipairs(keys) do C.ioctl(v, UI_SET_KEYBIT, int(k)) end
+  for code, r in pairs(axes) do
+    C.ioctl(v, UI_SET_ABSBIT, int(code))
+    local s = ffi.new("uinput_abs_setup_t") s.code = code s.absinfo.minimum = r[1] s.absinfo.maximum = r[2]
+    C.ioctl(v, UI_ABS_SETUP, s)
+  end
+  if ff then C.ioctl(v, UI_SET_EVBIT, int(EV_FF)) C.ioctl(v, UI_SET_FFBIT, int(FF_RUMBLE)) end
+  local st = ffi.new("uinput_setup_t")
+  st.id.bustype = 0x03 st.id.vendor = idv st.id.product = idp st.id.version = 0x0114
+  ffi.copy(st.name, name:sub(1, 79))
+  st.ff_effects_max = ff and 16 or 0
+  if C.ioctl(v, UI_DEV_SETUP, st) < 0 or C.ioctl(v, UI_DEV_CREATE) < 0 then log("uinput setup failed: " .. name) C.close(v) return nil end
+  return v, event_node(v)
+end
+
+-- ---- pads ----
+local pads, layer = {}, false
+-- pad_mode: "one" (default) = ONE virtual pad that follows the pad used last (single-player games read slot 1 only; with two
+-- virtual pads a game took input from one and sent rumble / some buttons to the other), "all" = one virtual pad per pad,
+-- created in the pad_order priority ("vid:pid,...": the first = player 1)
+local MODE, ORDER = "one", {}
+local SH, active = nil, nil   -- mode one: the shared virtual pad { v, vpath, cache } and the pad that drives it
+local function global_config()
+  local s = "\n" .. (slurp(SETTINGS) or "")
+  local m = s:match('\npad_mode%s*=%s*"([^"]*)"')
+  local o = {} for x in (s:match('\npad_order%s*=%s*"([^"]*)"') or ""):gmatch("[^,]+") do o[#o + 1] = x end
+  return m == "all" and "all" or "one", o
+end
+
+local function apply_kernel(p)   -- physical absinfo back to factory (older LWTS shifted it), jitter filter on the sticks
+  local ai = ffi.new("absinfo_t")
+  for code, a in pairs(p.abs) do
+    if C.ioctl(p.fd, EVIOCGABS(code), ai) >= 0 then
+      ai.minimum, ai.maximum, ai.flat = a.min, a.max, 0
+      if code == p.ls[1] or code == p.ls[2] or code == p.rs[1] or code == p.rs[2] then
+        ai.fuzz = round((a.max - a.min) / 2 * p.tune.jit / 100)
+      end
+      C.ioctl(p.fd, EVIOCSABS(code), ai)
+    end
+  end
+end
+
+-- ---- monitor socket: raw values for LWTS Settings ----
+local SOCK_STREAM, SOCK_NONBLOCK, SOCK_CLOEXEC, MSG_OUT = 1, 0x800, 0x80000, 0x4040   -- send: MSG_DONTWAIT | MSG_NOSIGNAL
+local function open_monitor(p)
+  p.sock = STATE_DIR .. "/" .. p.path:match("[^/]+$") .. ".sock"
+  C.unlink(p.sock)
+  local fd = C.socket(1, SOCK_STREAM + SOCK_NONBLOCK + SOCK_CLOEXEC, 0)
+  local a = ffi.new("sockaddr_un_t") a.family = 1 ffi.copy(a.path, p.sock)
+  if fd < 0 or C.bind(fd, a, ffi.sizeof(a)) < 0 or C.listen(fd, 4) < 0 then log("monitor socket failed: " .. p.sock) if fd >= 0 then C.close(fd) end p.sock = nil return end
+  C.chmod(p.sock, tonumber("666", 8))   -- the user's shell connects; it only carries what the pad does
+  p.lfd, p.clients, p.pend, p.sent = fd, {}, {}, 0
+end
+local function say(p, c, text) if C.send(c, text, #text, MSG_OUT) < 0 then C.close(c) p.clients[c] = nil end end
+local function accept_client(p)
+  local c = C.accept4(p.lfd, nil, nil, SOCK_NONBLOCK + SOCK_CLOEXEC)
+  if c < 0 then return end
+  p.clients[c] = true
+  local l = { "dev " .. p.path }
+  for code, a in pairs(p.abs) do l[#l + 1] = ("abs %d %d %d 0 0 %d"):format(code, a.min, a.max, p.val[code] or 0) end
+  for _, k in ipairs(p.keys) do if k >= 0x100 then l[#l + 1] = "key " .. k end end
+  l[#l + 1] = "ready"
+  say(p, c, table.concat(l, "\n") .. "\n")
+end
+local function flush_monitor(p, force)   -- at most ~60 per second; the last values always go out
+  if not next(p.clients) or not next(p.pend) then return end
+  local t = now_ms()
+  if not force and t - p.sent < 16 then p.due = true return end
+  local l = {} for k, v in pairs(p.pend) do l[#l + 1] = k .. " " .. v end
+  local text = table.concat(l, "\n") .. "\n"
+  for c in pairs(p.clients) do say(p, c, text) end
+  p.pend, p.sent, p.due = {}, t, false
+end
+local function close_monitor(p)
+  if not p.lfd then return end
+  for c in pairs(p.clients) do C.close(c) end
+  C.close(p.lfd) C.unlink(p.sock) p.lfd = nil
+end
+
+local function open_pad(j)
+  sh("setfacl -b " .. j.path)   -- the rule drops uaccess; an ACL granted before the rule stays until cleared
+  local js = io.popen("ls " .. j.sys .. "/.. 2>/dev/null") for n in js:lines() do if n:match("^js%d+$") then sh("setfacl -b /dev/input/" .. n) end end js:close()
+  local fd = C.open(j.path, O_RDWR + O_NONBLOCK + O_CLOEXEC)
+  if fd < 0 then log("cannot open " .. j.path) return nil end
+  local p = { path = j.path, id = j.id, name = j.name, fd = fd, val = {}, out = {}, ff = {}, abs = {} }
+  p.cal, p.tune, p.btn = config(p.id)
+  local ai = ffi.new("absinfo_t")
+  for _, a in ipairs(bits(fd, EV_ABS, 8)) do
+    if C.ioctl(fd, EVIOCGABS(a), ai) >= 0 then
+      local c = p.cal[a]   -- factory range: the saved one if any (the live one may be shifted by an older LWTS)
+      p.abs[a] = c and { min = c.fmin, max = c.fmax } or { min = ai.minimum, max = ai.maximum }
+      p.val[a] = ai.value
+    end
+  end
+  -- layout: left ABS_X/Y; right ABS_RX/RY, else ABS_Z/RZ; triggers ABS_Z/RZ (when right = RX/RY), else ABS_BRAKE/GAS
+  p.ls = { 0, 1 }
+  if p.abs[3] and p.abs[4] then p.rs = { 3, 4 } p.tr = (p.abs[2] and p.abs[5]) and { 2, 5 } or nil
+  else p.rs = { 2, 5 } p.tr = (p.abs[10] and p.abs[9]) and { 10, 9 } or nil end
+  p.keys = bits(fd, EV_KEY, 96)
+  local ff = false for _, f in ipairs(bits(fd, EV_FF, 16)) do if f == FF_RUMBLE then ff = true end end
+  local axes = { [0] = { -32768, 32767 }, [1] = { -32768, 32767 }, [3] = { -32768, 32767 }, [4] = { -32768, 32767 }, [2] = { 0, 255 }, [5] = { 0, 255 } }
+  axes[16], axes[17] = { -1, 1 }, { -1, 1 }   -- always a hat: pads with d-pad BUTTONS (DualShock 3) are converted below
+  -- every virtual pad is the SAME Xbox 360 clone (keys + axes): SDL / Proton index buttons by the order of the present
+  -- keys under one GUID, so a pad with extra keys (DS3: L2/R2 digital, d-pad keys) got a shifted layout and games mixed pads up
+  p.cache, p.held = {}, {}
+  if MODE == "one" then
+    if not SH then
+      local v, vp = make_virtual("Microsoft X-Box 360 pad", 0x045e, 0x028e, XBOX_KEYS, axes, true)
+      if v then SH = { v = v, vpath = vp, cache = {} } end
+    end
+    if not SH then C.close(fd) return nil end
+    p.v, p.vpath, p.shared = SH.v, SH.vpath, true
+  else
+    p.v, p.vpath = make_virtual("Microsoft X-Box 360 pad", 0x045e, 0x028e, XBOX_KEYS, axes, ff)   -- known to every mapping database
+  end
+  if not p.v then C.close(fd) return nil end
+  apply_kernel(p)
+  if C.ioctl(fd, EVIOCGRAB, int(1)) < 0 then log("grab failed: " .. j.path) end
+  open_monitor(p)
+  log("layer on: " .. p.name .. " (" .. p.id .. ") " .. p.path .. " -> " .. p.vpath)
+  return p
+end
+
+local function close_pad(p)
+  close_monitor(p)
+  if p.v and not p.shared then C.close(p.v) end   -- destroys the virtual pad (the shared one lives while any pad does)
+  if active == p then active = nil end
+  C.close(p.fd)                  -- releases the grab
+  log("layer off: " .. p.path)
+end
+
+-- ---- processing ----
+local function base(p, code)   -- calibrated range (reach) and centre, or the factory ones
+  local c = p.cal[code]
+  if c then return c.min, c.max, c.c or (c.min + c.max) / 2 end
+  local a = p.abs[code] or { min = -32768, max = 32767 }
+  return a.min, a.max, (a.min + a.max) / 2
+end
+local function stick(p, codes, side)
+  local t = p.tune
+  local function n(code)
+    local mn, mx, c = base(p, code)
+    local d = (p.val[code] or 0) - c
+    local h = d >= 0 and (mx - c) or (c - mn)   -- each side scales by its own reach
+    return h > 0 and d / h or 0
+  end
+  local x, y = n(codes[1]), n(codes[2])
+  local r = math.sqrt(x * x + y * y)
+  local dz, out = t[side .. "dz"] / 100, t[side .. "out"] / 100
+  if r <= dz or r == 0 then return 0, 0 end
+  local rr = clamp((r - dz) / math.max(0.01, 1 - dz - out), 0, 1) ^ math.max(0.2, t[side .. "curve"])
+  local ad = t[side .. "ad"] / 100
+  local k = (ad + (1 - ad) * rr) / r
+  return clamp(x * k, -1, 1), clamp(y * k, -1, 1)
+end
+local function trigger(p, code, side)
+  local t = p.tune
+  local mn, mx = base(p, code)
+  local v = mx > mn and ((p.val[code] or 0) - mn) / (mx - mn) or 0
+  local s, e = t[side .. "ts"] / 100, math.max(t[side .. "te"], t[side .. "ts"] + 1) / 100
+  return clamp((v - s) / (e - s), 0, 1)
+end
+local function switch_to(p)   -- mode one: the shared pad now follows p
+  local a = active
+  if a and a ~= p and pads[a.path] then
+    for _, rid in pairs(a.ff) do emit(a.fd, EV_FF, rid, 0) end   -- stop rumble on the old pad
+    for k, down in pairs(a.held) do if down then emit(SH.v, EV_KEY, k, 0) end end
+    a.held = {}
+  end
+  active = p
+  p.out = {}   -- every value of the new pad goes out
+  log("active pad: " .. p.name .. " " .. p.path)
+end
+local function frame(p)
+  local o = {}
+  local lx, ly = stick(p, p.ls, "l")
+  local rx, ry = stick(p, p.rs, "r")
+  o[0], o[1], o[3], o[4] = round(lx * 32767), round(ly * 32767), round(rx * 32767), round(ry * 32767)
+  if p.tr then o[2], o[5] = round(trigger(p, p.tr[1], "l") * 255), round(trigger(p, p.tr[2], "r") * 255) end
+  local d = p.dpad or {}
+  o[16] = p.abs[16] and (p.val[16] or 0) or ((d[547] and 1 or 0) - (d[546] and 1 or 0))   -- d-pad keys -> hat
+  o[17] = p.abs[17] and (p.val[17] or 0) or ((d[545] and 1 or 0) - (d[544] and 1 or 0))
+  if p.shared and active ~= p then   -- another pad drives the shared one: take over only on a clear move
+    local busy = math.max(math.abs(lx), math.abs(ly), math.abs(rx), math.abs(ry)) > 0.5 or (o[2] or 0) > 80 or (o[5] or 0) > 80 or o[16] ~= 0 or o[17] ~= 0
+    if not busy then return end
+    switch_to(p)
+  end
+  for c, v in pairs(o) do if p.out[c] ~= v then p.out[c] = v emit(p.v, EV_ABS, c, v) end end
+  emit(p.v, EV_SYN, 0, 0)
+end
+
+-- rumble: games talk to the virtual pad, the effect goes to the real one
+local function ff_put(p, vid, src)   -- the game's effect vid onto pad p
+  local eff = ffi.new("ff_t") ffi.copy(eff, src, ffi.sizeof("ff_t"))
+  eff.id = p.ff[vid] or -1
+  if C.ioctl(p.fd, EVIOCSFF, eff) >= 0 then p.ff[vid] = eff.id return true end
+  return false
+end
+local function from_virtual(p, e)   -- p = the pad the virtual one belongs to (mode one: the active pad)
+  local cache = p.shared and SH.cache or p.cache
+  if e.type == EV_UINPUT and e.code == 1 then   -- UI_FF_UPLOAD
+    local up = ffi.new("ff_upload_t") up.request_id = e.value
+    if C.ioctl(p.v, UI_BEGIN_FF_UPLOAD, up) < 0 then return end
+    local copy = ffi.new("ff_t") ffi.copy(copy, up.effect, ffi.sizeof("ff_t"))
+    cache[up.effect.id] = copy
+    for _, q in pairs(pads) do if q ~= p and q.v == p.v then q.ff[up.effect.id] = q.ff[up.effect.id] and (ff_put(q, up.effect.id, copy) and q.ff[up.effect.id]) or nil end end   -- an updated effect: stale copies refreshed
+    up.retval = ff_put(p, up.effect.id, copy) and 0 or -22
+    C.ioctl(p.v, UI_END_FF_UPLOAD, up)
+  elseif e.type == EV_UINPUT and e.code == 2 then   -- UI_FF_ERASE
+    local er = ffi.new("ff_erase_t") er.request_id = e.value
+    if C.ioctl(p.v, UI_BEGIN_FF_ERASE, er) < 0 then return end
+    cache[er.effect_id] = nil
+    for _, q in pairs(pads) do
+      if q.v == p.v and q.ff[er.effect_id] then C.ioctl(q.fd, EVIOCRMFF, int(q.ff[er.effect_id])) q.ff[er.effect_id] = nil end
+    end
+    er.retval = 0
+    C.ioctl(p.v, UI_END_FF_ERASE, er)
+  elseif e.type == EV_FF then
+    if not p.ff[e.code] and cache[e.code] then ff_put(p, e.code, cache[e.code]) end   -- uploaded while another pad was active
+    if p.ff[e.code] then emit(p.fd, EV_FF, p.ff[e.code], e.value) end
+  end
+end
+
+-- ---- state for the shell ----
+local function write_state()
+  local l = { "layer " .. (layer and "on" or "off"), "mode " .. MODE }
+  if active then l[#l + 1] = "active " .. active.path end
+  for _, p in pairs(pads) do
+    l[#l + 1] = ("pad %s %s %s"):format(p.path, p.id, p.name)
+    for code, a in pairs(p.abs) do l[#l + 1] = ("range %s %d %d %d"):format(p.path, code, a.min, a.max) end
+    if p.vpath and p.vpath ~= "" then l[#l + 1] = ("virt %s %s"):format(p.path, p.vpath) end
+    if p.sock then l[#l + 1] = ("mon %s %s"):format(p.path, p.sock) end
+  end
+  local tmp = STATE_DIR .. "/state.tmp"
+  local f = io.open(tmp, "w") if not f then return end
+  f:write(table.concat(l, "\n") .. "\n") f:close()
+  os.rename(tmp, STATE_DIR .. "/state")
+end
+
+-- ---- layer on / off ----
+local function retrigger(prop)   -- re-run the udev rules for joysticks: hide them (flag present) or give access back
+  sh("udevadm trigger --action=change --subsystem-match=input --property-match=" .. prop)
+  sh("udevadm settle -t 3")   -- bounded wait: never hang the layer on udev
+end
+local function rank(id) for i, x in ipairs(ORDER) do if x == id then return i end end return 99 end
+local function rescan(rebuild)   -- rebuild: close every pad first (mode / order changed)
+  local list = layer and physical() or {}
+  table.sort(list, function(a, b) local ra, rb = rank(a.id), rank(b.id) if ra ~= rb then return ra < rb end return a.path < b.path end)
+  local seen, new = {}, false
+  for _, j in ipairs(list) do seen[j.path] = true if not pads[j.path] then new = true end end
+  for path, p in pairs(pads) do if not seen[path] then close_pad(p) pads[path] = nil end end
+  if rebuild or (new and MODE == "all" and next(pads)) then   -- mode all: the slots follow the order, so recreate them all
+    for path, p in pairs(pads) do close_pad(p) pads[path] = nil end
+  end
+  if not next(pads) and SH then C.close(SH.v) SH = nil end   -- no pad left (or rebuild): the shared pad goes too
+  for _, j in ipairs(list) do if not pads[j.path] then pads[j.path] = open_pad(j) end end
+  if MODE == "one" and not active then for _, j in ipairs(list) do if pads[j.path] then active = pads[j.path] break end end end   -- the top pad starts
+  write_state()
+end
+local function sync_flags()
+  local want = exists(FLAG)
+  if want ~= layer then
+    layer = want
+    if layer then retrigger("ID_INPUT_JOYSTICK=1") rescan()
+    else rescan() retrigger("LWTS_PAD=1") end
+    log(layer and "layer enabled" or "layer disabled")
+  end
+end
+
+-- ---- main loop ----
+local ino = C.inotify_init1(0x800)
+C.inotify_add_watch(ino, "/dev/input", 0x300)   -- IN_CREATE | IN_DELETE: hotplug
+local watchingThemes, watchingRun = false, false
+local function watches()   -- the session dir and the home may appear after boot: retried until they do
+  if not watchingThemes then watchingThemes = C.inotify_add_watch(ino, THEMES, 0x88) >= 0 end   -- settings saved
+  if not watchingRun then watchingRun = C.inotify_add_watch(ino, RUN, 0x300) >= 0 end          -- the flag created / deleted
+end
+watches()
+MODE, ORDER = global_config()
+sync_flags()
+write_state()
+local ev, esz = ffi.new("ev_t[64]"), ffi.sizeof("ev_t")
+local ibuf = ffi.new("uint8_t[4096]")
+local pending = false   -- hotplug burst: rescan once it is quiet
+while true do
+  local fds, owner = { ino }, {}
+  local due = false
+  for _, p in pairs(pads) do
+    fds[#fds + 1] = p.fd owner[#fds] = { p, "pad" }
+    if not p.shared then fds[#fds + 1] = p.v owner[#fds] = { p, "virt" } end
+    if p.lfd then fds[#fds + 1] = p.lfd owner[#fds] = { p, "listen" } end
+    for c in pairs(p.clients or {}) do fds[#fds + 1] = c owner[#fds] = { p, "client", c } end
+    due = due or p.due
+  end
+  if SH then   -- the shared pad: rumble requests go to the active pad (never left unanswered: a game waits on its upload)
+    local ap = active and pads[active.path] and active or select(2, next(pads))
+    if ap then fds[#fds + 1] = SH.v owner[#fds] = { ap, "virt" } end
+  end
+  local pf = ffi.new("pollfd_t[?]", #fds)
+  for i, fd in ipairs(fds) do pf[i - 1].fd = fd pf[i - 1].events = 1 end
+  local timeout = due and 16 or pending and 300 or (watchingRun and watchingThemes) and -1 or 2000
+  local r = C.poll(pf, #fds, timeout)
+  for _, p in pairs(pads) do if p.due then flush_monitor(p, true) end end
+  if r == 0 then
+    if pending then pending = false rescan() end
+    watches() sync_flags()
+  elseif r > 0 then
+    if pf[0].revents ~= 0 then
+      local n = tonumber(C.read(ino, ibuf, 4096)) or 0
+      local off, cfg, flags = 0, false, false
+      while off < n do
+        local ie = ffi.cast("inev_t*", ibuf + off)
+        local name = ie.len > 0 and ffi.string(ibuf + off + 16) or ""
+        if name == "settings.toml" then cfg = true
+        elseif name == "lwts-padlayer" then flags = true
+        elseif name:match("^event%d+$") then pending = true end
+        off = off + 16 + ie.len
+      end
+      if flags then sync_flags() end
+      if cfg then
+        local m, o = global_config()
+        if m ~= MODE or table.concat(o, ",") ~= table.concat(ORDER, ",") then
+          MODE, ORDER = m, o log("mode " .. MODE .. ", order " .. table.concat(ORDER, ","))
+          if layer then rescan(true) end
+        end
+        for _, p in pairs(pads) do p.cal, p.tune, p.btn = config(p.id) apply_kernel(p) frame(p) end
+      end
+    end
+    for i = 2, #fds do
+      local o = owner[i]
+      if pf[i - 1].revents ~= 0 and o and pads[o[1].path] then
+        local p, kind = o[1], o[2]
+        if kind == "listen" then accept_client(p)
+        elseif kind == "client" then   -- the shell went away (or wrote something: ignored)
+          local junk = ffi.new("uint8_t[64]")
+          if p.clients[o[3]] and tonumber(C.read(o[3], junk, 64)) <= 0 then C.close(o[3]) p.clients[o[3]] = nil end
+        else
+          local virt = kind == "virt"
+          local n = tonumber(C.read(virt and p.v or p.fd, ev, esz * 64)) or -1
+          if not virt and n <= 0 and bit.band(pf[i - 1].revents, 0x18) ~= 0 then   -- unplugged
+            close_pad(p) pads[p.path] = nil pending = true
+          elseif n > 0 then
+            for k = 0, n / esz - 1 do
+              local e = ev[k]
+              if virt then from_virtual(p, e)
+              elseif e.type == EV_ABS then p.val[e.code] = e.value p.pend["a " .. e.code] = e.value
+              elseif e.type == EV_KEY then
+                local to = p.btn[e.code] or e.code
+                if p.shared and active ~= p and e.value == 1 then switch_to(p) end   -- a press takes the shared pad over
+                if p.shared and active ~= p then -- not the active pad: nothing reaches the game
+                elseif XBOX_KEY[to] then emit(p.v, EV_KEY, to, e.value) p.held[to] = e.value ~= 0
+                elseif to >= 544 and to <= 547 then p.dpad = p.dpad or {} p.dpad[to] = e.value ~= 0 end   -- other keys (DS3 L2/R2 digital): the analog triggers carry them
+                p.pend["k " .. e.code] = e.value
+              elseif e.type == EV_SYN and e.code == 0 then frame(p) flush_monitor(p) end
+            end
+          end
+        end
+      end
+    end
+  end
+end

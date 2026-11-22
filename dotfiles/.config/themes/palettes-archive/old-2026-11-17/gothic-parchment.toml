@@ -1,0 +1,13 @@
+# Nothing-adapted (Claude, 2026-11-07): background near-black / paper, text near-white / near-black, the family accent kept as the one signal colour. Original: ../palettes-archive/originals/gothic-parchment.toml
+name = "Gothic Parchment"
+mode = "light"
+
+background = "#efece5"
+foreground = "#130f16"
+accent = "#7a2740"
+tertiary = "#5a4a7a"
+selection = "#dcd6cc"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#2a2230", "#9a2f3f", "#3f6b4a", "#8a6a1f", "#3f4f8a", "#6e3f7a", "#2f6f75", "#c9bfae"]
+ansi_bright = ["#4a4050", "#b84a5a", "#5a8a66", "#a88a3a", "#5a6aa8", "#8a5a98", "#4a8f95", "#e9e1d3"]

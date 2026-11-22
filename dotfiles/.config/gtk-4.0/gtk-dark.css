@@ -1,0 +1,15 @@
+/* theme colours + shape: colors.css is rendered by ~/.config/themes/render.lua from the active palette */
+@import url("colors.css");
+
+/* shape: same rounding as the shell (settings.toml rounding = 3) */
+window.background { border-radius: 3px; }
+headerbar { box-shadow: none; border-bottom: 1px solid alpha(@window_fg_color, 0.08); }
+button, entry, .card, popover > contents, row.activatable { border-radius: 3px; }
+.navigation-sidebar row, .sidebar-pane row { border-radius: 3px; margin: 1px 6px; min-height: 28px; }
+.navigation-sidebar row:selected { background: alpha(@accent_bg_color, 0.22); color: @window_fg_color; }
+.navigation-sidebar row:selected:hover { background: alpha(@accent_bg_color, 0.30); }
+listview > row, gridview > child { border-radius: 3px; }
+listview > row:selected, gridview > child:selected { background: alpha(@accent_bg_color, 0.25); color: @window_fg_color; }
+:focus-visible { outline-color: @accent_bg_color; }
+/* Nautilus accents in the shell's dot font (Nothing Ndot57 Caps); the file list and sidebar stay on the UI font for readability */
+window.view windowtitle label, window.view headerbar .title, window.view columnview > header button label { font-family: "Ndot57Caps"; font-size: 11px; letter-spacing: 0; }

@@ -1,0 +1,13 @@
+# Nothing-adapted (Claude, 2026-11-07): background near-black / paper, text near-white / near-black, the family accent kept as the one signal colour. Original: ../palettes-archive/originals/everforest-dark.toml
+name = "Everforest Dark"
+mode = "dark"
+
+background = "#111416"
+foreground = "#e7e0d0"
+accent = "#a7c080"
+tertiary = "#7fbbb3"
+selection = "#343c41"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#475258", "#e67e80", "#a7c080", "#dbbc7f", "#7fbbb3", "#d699b6", "#83c092", "#d3c6aa"]
+ansi_bright = ["#7a8478", "#e67e80", "#a7c080", "#dbbc7f", "#7fbbb3", "#d699b6", "#83c092", "#d3c6aa"]

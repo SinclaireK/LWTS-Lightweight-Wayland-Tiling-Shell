@@ -1,0 +1,1 @@
+{ "id": "livewall", "name": "Live wallpapers", "version": "1", "contract": 1, "videowall": "VideoWall.qml" }

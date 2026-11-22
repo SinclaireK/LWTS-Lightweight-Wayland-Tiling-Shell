@@ -1,0 +1,12 @@
+name = "Elementarish"
+mode = "dark"
+
+background = "#333333"
+foreground = "#eee8d5"
+accent = "#268ad0"
+tertiary = "#2a9d95"
+selection = "#4a4a4a"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#4d4d4d", "#d1302c", "#859900", "#b28602", "#268ad0", "#d33682", "#2a9d95", "#c8c3b4"]
+ansi_bright = ["#657b83", "#e3523e", "#9fb31a", "#cfa012", "#4aa3e6", "#6c71c4", "#3cbab1", "#eee8d5"]

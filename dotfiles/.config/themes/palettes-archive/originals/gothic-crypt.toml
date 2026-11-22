@@ -1,0 +1,12 @@
+name = "Gothic Crypt"
+mode = "dark"
+
+background = "#14111a"
+foreground = "#cfc6d8"
+accent = "#a63a5a"
+tertiary = "#6f5f8f"
+selection = "#2a2133"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#1e1a26", "#b0404f", "#5f8a6a", "#b89b52", "#5f6fa8", "#8c5a9a", "#4f8f95", "#cfc6d8"]
+ansi_bright = ["#3a3347", "#d0586a", "#79a584", "#d4b86a", "#7d8fc9", "#a97ab8", "#6bb0b6", "#efe8f5"]

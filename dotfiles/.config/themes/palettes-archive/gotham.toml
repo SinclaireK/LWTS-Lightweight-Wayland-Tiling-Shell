@@ -1,0 +1,12 @@
+name = "Gotham"
+mode = "dark"
+
+background = "#0c1014"
+foreground = "#99d1ce"
+accent = "#2aa889"
+tertiary = "#d26937"
+selection = "#0a3749"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#11151c", "#c23127", "#2aa889", "#edb443", "#195466", "#4e5166", "#33859e", "#98d1ce"]
+ansi_bright = ["#245361", "#d26937", "#2aa889", "#edb443", "#599cab", "#888ca6", "#599cab", "#d3ebe9"]

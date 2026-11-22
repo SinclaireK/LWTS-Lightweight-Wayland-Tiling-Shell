@@ -1,0 +1,12 @@
+name = "Monokai"
+mode = "dark"
+
+background = "#272822"
+foreground = "#f8f8f2"
+accent = "#f92672"
+tertiary = "#a6e22e"
+selection = "#49483e"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#3e3d32", "#f92672", "#a6e22e", "#e6db74", "#66d9ef", "#ae81ff", "#a1efe4", "#f8f8f2"]
+ansi_bright = ["#75715e", "#ff669d", "#beed5f", "#f0e68c", "#8de4f5", "#c6a6ff", "#b8f4ec", "#f9f8f5"]

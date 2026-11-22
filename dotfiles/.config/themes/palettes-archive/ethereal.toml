@@ -1,0 +1,13 @@
+name = "Ethereal"
+mode = "dark"
+# from Omarchy (MIT, (c) David Heinemeier Hansson), github.com/basecamp/omarchy themes/ethereal/colors.toml
+
+background = "#060b1e"
+foreground = "#ffcead"
+accent = "#7d82d9"
+tertiary = "#c89dc1"
+selection = "#252e56"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#131a3a", "#ed5b5a", "#92a593", "#e9bb4f", "#7d82d9", "#c89dc1", "#a3bfd1", "#ffcead"]
+ansi_bright = ["#6d7db6", "#faaaa9", "#c4cfc4", "#f7dc9c", "#c2c4f0", "#ead7e7", "#dfeaf0", "#ffcead"]

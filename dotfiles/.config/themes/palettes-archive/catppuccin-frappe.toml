@@ -1,0 +1,12 @@
+name = "Catppuccin Frappé"
+mode = "dark"
+
+background = "#303446"
+foreground = "#c6d0f5"
+accent = "#ca9ee6"
+tertiary = "#81c8be"
+selection = "#51576d"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#51576d", "#e78284", "#a6d189", "#e5c890", "#8caaee", "#f4b8e4", "#81c8be", "#b5bfe2"]
+ansi_bright = ["#626880", "#e78284", "#a6d189", "#e5c890", "#8caaee", "#f4b8e4", "#81c8be", "#a5adce"]

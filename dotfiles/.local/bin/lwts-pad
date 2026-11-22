@@ -1,0 +1,146 @@
+#!/usr/bin/luajit
+-- lwts-pad: gamepad helper for LWTS Settings (evdev, no deps).
+--   lwts-pad list                       -> service state (/run/lwts-pad/state: layer, pads it holds, virt, raw) + the pads
+--                                          the user can open: "pad <path> <vid:pid> <name>", "range <path> code min max"
+--   lwts-pad watch [dev]                -> "abs code min max fuzz flat value", "key code", "ready",
+--                                          then "a code v" / "k code v" lines, ~60 per second max
+--   lwts-pad rumble [dev] [strong weak ms]  (0..65535, default 40000 20000 400)
+local ffi = require("ffi")
+local bit = require("bit")
+ffi.cdef [[
+typedef struct { long sec, usec; uint16_t type, code; int32_t value; } ev_t;
+typedef struct { int32_t value, minimum, maximum, fuzz, flat, resolution; } absinfo_t;
+typedef struct { uint16_t type; int16_t id; uint16_t direction; uint16_t tbutton, tinterval;
+                 uint16_t length, delay; uint16_t pad_; uint16_t strong, weak; uint8_t rest[28]; } ff_t;
+typedef struct { int fd; short events, revents; } pollfd_t;
+int open(const char *p, int f); int close(int fd);
+long read(int fd, void *b, size_t n); long write(int fd, const void *b, size_t n);
+int ioctl(int fd, unsigned long req, ...); int poll(pollfd_t *f, unsigned long n, int t);
+int usleep(unsigned int us);
+typedef struct { long s, ns; } ts_t; int clock_gettime(int c, ts_t *t);
+]]
+local C = ffi.C
+local function IOC(dir, nr, size) return bit.bor(bit.lshift(dir, 30), bit.lshift(size, 16), 0x4500, nr) end
+local EVIOCGBIT = function(ev, len) return IOC(2, 0x20 + ev, len) end
+local EVIOCGABS = function(a) return IOC(2, 0x40 + a, 24) end
+local EVIOCSFF, EVIOCRMFF = IOC(1, 0x80, ffi.sizeof("ff_t")), IOC(1, 0x81, 4)
+
+local function slurp(p) local f = io.open(p) if not f then return nil end local s = f:read("*a") f:close() return s end
+
+local function pads()
+  local out = {}
+  local ls = io.popen("ls /sys/class/input/ 2>/dev/null")
+  for n in ls:lines() do
+    local num = n:match("^event(%d+)$")
+    if num then
+      local dev = slurp("/sys/class/input/" .. n .. "/dev")
+      local udev = dev and slurp("/run/udev/data/c" .. dev:gsub("%s", ""))
+      local real = io.popen("readlink -f /sys/class/input/" .. n) local rp = real:read("*l") or "" real:close()
+      local virt = rp:find("/virtual/", 1, true) ~= nil
+      -- physical pads: ID_INPUT_JOYSTICK, or LWTS_PAD when the layer hides them (75-lwts-padlayer.rules)
+      if udev and (udev:find("E:ID_INPUT_JOYSTICK=1", 1, true) or udev:find("E:LWTS_PAD=1", 1, true)) then
+        local base = "/sys/class/input/" .. n .. "/device/"
+        local name = (slurp(base .. "name") or "Gamepad"):gsub("%s+$", "")
+        local v = (slurp(base .. "id/vendor") or "0000"):gsub("%s", "")
+        local p = (slurp(base .. "id/product") or "0000"):gsub("%s", "")
+        out[#out + 1] = { path = "/dev/input/" .. n, id = v .. ":" .. p, name = name, num = tonumber(num), virt = virt }
+      end
+    end
+  end
+  ls:close()
+  table.sort(out, function(a, b) return a.num < b.num end)
+  return out
+end
+
+local function pick(dev) if dev and dev ~= "" then return dev end for _, p in ipairs(pads()) do if not p.virt then return p.path end end end
+local function die(m) io.stderr:write("lwts-pad: " .. m .. "\n") os.exit(1) end
+
+local function bits(fd, ev, nbytes)
+  local b = ffi.new("uint8_t[?]", nbytes)
+  if C.ioctl(fd, EVIOCGBIT(ev, nbytes), b) < 0 then return {} end
+  local t = {}
+  for i = 0, nbytes * 8 - 1 do
+    if bit.band(b[bit.rshift(i, 3)], bit.lshift(1, bit.band(i, 7))) ~= 0 then t[#t + 1] = i end
+  end
+  return t
+end
+
+local cmd = arg[1] or "list"
+if cmd == "list" then
+  -- the layer service (lwts-padd) reports the pads it holds (users cannot open them) and its virtual / raw pads
+  local state, held = slurp("/run/lwts-pad/state") or "", {}
+  if state:match("^layer on") then
+    io.write(state)
+    for path in state:gmatch("\npad (%S+)") do held[path] = true end
+  end
+  local ai = ffi.new("absinfo_t")
+  for _, p in ipairs(pads()) do
+    if p.virt or held[p.path] then goto continue end   -- virtual pads and pads held by the layer are listed above
+    print(("pad %s %s %s"):format(p.path, p.id, p.name))
+    local fd = C.open(p.path, 0x800)
+    if fd >= 0 then
+      for _, a in ipairs(bits(fd, 3, 8)) do
+        if C.ioctl(fd, EVIOCGABS(a), ai) >= 0 then print(("range %s %d %d %d"):format(p.path, a, ai.minimum, ai.maximum)) end
+      end
+      C.close(fd)
+    end
+    ::continue::
+  end
+
+elseif cmd == "watch" then
+  local dev = pick(arg[2]) or die("no gamepad")
+  local fd = C.open(dev, 0x800) -- O_RDONLY | O_NONBLOCK
+  if fd < 0 then die("cannot open " .. dev) end
+  io.stdout:setvbuf("full")
+  print("dev " .. dev)
+  local ai = ffi.new("absinfo_t")
+  for _, a in ipairs(bits(fd, 3, 8)) do
+    if C.ioctl(fd, EVIOCGABS(a), ai) >= 0 then
+      print(("abs %d %d %d %d %d %d"):format(a, ai.minimum, ai.maximum, ai.fuzz, ai.flat, ai.value))
+    end
+  end
+  for _, k in ipairs(bits(fd, 1, 96)) do if k >= 0x100 then print("key " .. k) end end
+  print("ready") io.stdout:flush()
+  local ev, sz = ffi.new("ev_t[64]"), ffi.sizeof("ev_t")
+  local pfd = ffi.new("pollfd_t[1]") pfd[0].fd = fd pfd[0].events = 1
+  local pend, dirty, last = {}, false, 0
+  local ts = ffi.new("ts_t")
+  local function flush()
+    for key, v in pairs(pend) do io.stdout:write(key, " ", v, "\n") end
+    pend, dirty = {}, false
+    io.stdout:flush()
+  end
+  while true do
+    local r = C.poll(pfd, 1, dirty and 16 or -1)
+    if r > 0 then
+      if bit.band(pfd[0].revents, 0x18) ~= 0 then print("gone") io.stdout:flush() os.exit(0) end -- POLLERR|POLLHUP
+      local n = tonumber(C.read(fd, ev, sz * 64))
+      if n <= 0 then print("gone") io.stdout:flush() os.exit(0) end
+      for i = 0, n / sz - 1 do
+        local e = ev[i]
+        if e.type == 3 then pend["a " .. e.code] = e.value dirty = true
+        elseif e.type == 1 then pend["k " .. e.code] = e.value dirty = true end
+      end
+    end
+    C.clock_gettime(1, ts) -- CLOCK_MONOTONIC
+    local now = tonumber(ts.s) * 1000 + tonumber(ts.ns) / 1e6
+    if dirty and (r == 0 or now - last >= 16) then last = now flush() end
+  end
+
+elseif cmd == "rumble" then
+  local dev = pick(arg[2]) or die("no gamepad")
+  local strong, weak, ms = tonumber(arg[3] or 40000), tonumber(arg[4] or 20000), tonumber(arg[5] or 400)
+  local fd = C.open(dev, 2) -- O_RDWR
+  if fd < 0 then die("cannot open " .. dev .. " for writing") end
+  local e = ffi.new("ff_t") e.type = 0x50 e.id = -1 e.length = ms e.strong = strong e.weak = weak
+  if C.ioctl(fd, EVIOCSFF, e) < 0 then die("rumble not supported") end
+  local play = ffi.new("ev_t") play.type = 0x15 play.code = e.id play.value = 1
+  C.write(fd, play, ffi.sizeof("ev_t"))
+  C.usleep(ms * 1000 + 50000)
+  C.ioctl(fd, EVIOCRMFF, ffi.cast("int", e.id))
+  C.close(fd)
+  print("ok")
+
+else
+  die("unknown command " .. cmd)
+end

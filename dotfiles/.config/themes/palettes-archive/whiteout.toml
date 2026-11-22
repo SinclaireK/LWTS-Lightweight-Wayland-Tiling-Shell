@@ -1,0 +1,12 @@
+name = "Whiteout"
+mode = "light"
+
+background = "#ffffff"
+foreground = "#303030"
+accent = "#284d75"
+tertiary = "#0b8e44"
+selection = "#dddddd"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#101010", "#8d0202", "#0b8e44", "#a49104", "#122c87", "#722e76", "#184567", "#808080"]
+ansi_bright = ["#303030", "#9e0061", "#496600", "#8a6d00", "#284d75", "#413786", "#1a6e8c", "#ffffff"]

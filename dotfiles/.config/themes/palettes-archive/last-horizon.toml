@@ -1,0 +1,13 @@
+name = "Last Horizon"
+mode = "dark"
+# from Omarchy (MIT, (c) David Heinemeier Hansson), github.com/basecamp/omarchy themes/last-horizon/colors.toml
+
+background = "#0c0b0c"
+foreground = "#fafcfb"
+accent = "#b59790"
+tertiary = "#c4d8e2"
+selection = "#584e51"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#0c0b0c", "#c38b7b", "#87a9b0", "#6b5e73", "#b59790", "#c4d8e2", "#a5a0b6", "#fafcfb"]
+ansi_bright = ["#584e51", "#c38b7b", "#87a9b0", "#6b5e73", "#b59790", "#c4d8e2", "#a5a0b6", "#e2dddc"]

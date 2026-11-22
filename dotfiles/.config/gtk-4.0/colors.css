@@ -1,0 +1,24 @@
+@define-color accent_color #ef7179;
+@define-color accent_fg_color #0f0808;
+@define-color accent_bg_color #ef7179;
+@define-color window_bg_color #0b0606;
+@define-color window_fg_color #eee5e5;
+@define-color headerbar_bg_color #0b0606;
+@define-color headerbar_fg_color #eee5e5;
+@define-color headerbar_backdrop_color @headerbar_bg_color;
+@define-color popover_bg_color #211a1a;
+@define-color popover_fg_color #eee5e5;
+@define-color view_bg_color #0f0808;
+@define-color view_fg_color #eee5e5;
+@define-color card_bg_color #211a1a;
+@define-color card_fg_color #eee5e5;
+@define-color dialog_bg_color #211a1a;
+@define-color sidebar_bg_color transparent;
+@define-color sidebar_fg_color @window_fg_color;
+@define-color sidebar_border_color transparent;
+@define-color sidebar_backdrop_color transparent;
+.sidebar-pane { background-color: rgba(11, 6, 6, 0.88); }
+.navigation-sidebar, placessidebar, .sidebar-pane scrolledwindow { background-color: transparent; }
+window.view, window.view:backdrop, window.background.view { background-color: transparent; }
+.sidebar-pane headerbar, .sidebar-pane toolbarview, .sidebar-pane .top-bar, .sidebar-pane .toolbar { background-color: transparent; box-shadow: none; }
+.content-pane, .content-pane headerbar, .content-pane .view, .content-pane listview, .content-pane gridview, .content-pane columnview, .content-pane scrolledwindow { background-color: #0f0808; }

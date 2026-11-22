@@ -1,0 +1,13 @@
+# Own gem palette (Claude, 2026-11-17): honey gold. OKLCH-generated, family pair amber-light/-dark; Nothing look: tinted near-black / paper, one signal colour.
+name = "Amber Light"
+mode = "light"
+
+background = "#f8f2ec"
+foreground = "#241d14"
+accent = "#885703"
+tertiary = "#964a2f"
+selection = "#e4d9cb"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#5c5449", "#a23c3f", "#23762c", "#756203", "#2463ae", "#8c4287", "#0a7176", "#b0aaa3"]
+ansi_bright = ["#797065", "#912d31", "#0d671d", "#655406", "#12549e", "#7d3378", "#016266", "#8a8580"]

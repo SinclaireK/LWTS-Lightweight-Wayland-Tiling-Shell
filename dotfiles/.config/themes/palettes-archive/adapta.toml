@@ -1,0 +1,12 @@
+name = "Adapta Nokto"
+mode = "dark"
+
+background = "#263238"
+foreground = "#cfd8dc"
+accent = "#00bcd4"
+tertiary = "#ff4080"
+selection = "#37474f"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#2f3e45", "#ff0040", "#66bb6a", "#d4d400", "#00b0ff", "#c33dc3", "#00bcd4", "#cfd8dc"]
+ansi_bright = ["#546e7a", "#ff4080", "#81c784", "#ffff40", "#55bcea", "#e070e0", "#4dd0e1", "#ffffff"]

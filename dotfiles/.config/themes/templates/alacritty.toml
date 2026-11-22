@@ -1,0 +1,73 @@
+[colors.primary]
+background = '{{term.background}}'
+foreground = '{{term.foreground}}'
+
+[colors.cursor]
+text = '{{term.background}}'
+cursor = '{{term.foreground}}'
+
+[colors.vi_mode_cursor]
+text = '{{term.background}}'
+cursor = '{{term.accent}}'
+
+[colors.search.matches]
+foreground = '{{term.background}}'
+background = '{{term.yellow}}'
+
+[colors.search.focused_match]
+foreground = '{{term.background}}'
+background = '{{term.red}}'
+
+[colors.footer_bar]
+foreground = '{{term.background}}'
+background = '{{term.foreground}}'
+
+[colors.hints.start]
+foreground = '{{term.background}}'
+background = '{{term.yellow}}'
+
+[colors.hints.end]
+foreground = '{{term.background}}'
+background = '{{term.accent}}'
+
+[colors.selection]
+text = 'CellForeground'
+background = '{{term.selection}}'
+
+[colors.normal]
+black = '{{term.black}}'
+red = '{{term.red}}'
+green = '{{term.green}}'
+yellow = '{{term.yellow}}'
+blue = '{{term.blue}}'
+magenta = '{{term.magenta}}'
+cyan = '{{term.cyan}}'
+white = '{{term.white}}'
+
+[colors.bright]
+black = '{{term.bright_black}}'
+red = '{{term.bright_red}}'
+green = '{{term.bright_green}}'
+yellow = '{{term.bright_yellow}}'
+blue = '{{term.bright_blue}}'
+magenta = '{{term.bright_magenta}}'
+cyan = '{{term.bright_cyan}}'
+white = '{{term.bright_white}}'
+
+[window]
+opacity = {{ui.opacity}}
+
+[font.normal]
+family = "{{ui.mono}}"
+
+[font.bold]
+family = "{{ui.mono}}"
+
+[font.italic]
+family = "{{ui.mono}}"
+
+[font.bold_italic]
+family = "{{ui.mono}}"
+
+[font]
+size = {{ui.mono_pt}}

@@ -1,0 +1,13 @@
+name = "Miasma"
+mode = "dark"
+# from Omarchy (MIT, (c) David Heinemeier Hansson), github.com/basecamp/omarchy themes/miasma/colors.toml
+
+background = "#222222"
+foreground = "#c2c2b0"
+accent = "#78824b"
+tertiary = "#bb7744"
+selection = "#383838"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#2c2c2c", "#685742", "#5f875f", "#b36d43", "#78824b", "#bb7744", "#c9a554", "#c2c2b0"]
+ansi_bright = ["#555555", "#685742", "#5f875f", "#b36d43", "#78824b", "#bb7744", "#c9a554", "#c2c2b0"]

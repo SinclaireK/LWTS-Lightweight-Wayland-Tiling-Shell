@@ -1,0 +1,12 @@
+name = "Gruvbox Material Dark"
+mode = "dark"
+
+background = "#282828"
+foreground = "#d4be98"
+accent = "#d8a657"
+tertiary = "#89b482"
+selection = "#45403d"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#3c3836", "#ea6962", "#a9b665", "#d8a657", "#7daea3", "#d3869b", "#89b482", "#d4be98"]
+ansi_bright = ["#7c6f64", "#ea6962", "#a9b665", "#d8a657", "#7daea3", "#d3869b", "#89b482", "#ddc7a1"]

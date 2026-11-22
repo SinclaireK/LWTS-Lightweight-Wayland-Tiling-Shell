@@ -1,0 +1,12 @@
+name = "Kyli0x"
+mode = "dark"
+
+background = "#222222"
+foreground = "#e8f6f5"
+accent = "#21d6c9"
+tertiary = "#d486d4"
+selection = "#2e4a48"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#333333", "#e65c8c", "#7ad6a0", "#e6c97a", "#5ea8e6", "#d486d4", "#21d6c9", "#c8dcdb"]
+ansi_bright = ["#80638e", "#f07fa6", "#9ee6bd", "#f0dc9a", "#85c0f0", "#ec95ec", "#6fe8df", "#e8f6f5"]

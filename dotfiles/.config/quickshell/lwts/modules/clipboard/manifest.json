@@ -1,0 +1,1 @@
+{ "id": "clipboard", "name": "Clipboard history", "version": "1", "contract": 1, "service": "Service.qml", "tiles": "Tiles.qml" }

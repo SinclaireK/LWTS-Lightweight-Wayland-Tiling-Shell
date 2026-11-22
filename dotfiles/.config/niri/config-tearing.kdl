@@ -1,0 +1,7 @@
+// Used only by niri-tearing (fork). Vanilla niri does not know allow-tearing and would reject it.
+include "config.kdl"
+
+window-rule {
+    match app-id=r#"^(steam_app_.*|dota2)$"#
+    allow-tearing true
+}

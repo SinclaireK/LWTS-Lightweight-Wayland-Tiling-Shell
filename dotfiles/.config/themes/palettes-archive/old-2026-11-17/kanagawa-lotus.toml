@@ -1,0 +1,13 @@
+# Nothing-adapted (Claude, 2026-11-07): background near-black / paper, text near-white / near-black, the family accent kept as the one signal colour. Original: ../palettes-archive/originals/kanagawa-lotus.toml
+name = "Kanagawa Lotus"
+mode = "light"
+
+background = "#f2f0dc"
+foreground = "#26262d"
+accent = "#4d699b"
+tertiary = "#624c83"
+selection = "#d6d6d8"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#1f1f28", "#c84053", "#6f894e", "#77713f", "#4d699b", "#b35b79", "#597b75", "#545464"]
+ansi_bright = ["#8a8980", "#d7474b", "#6e915f", "#836f4a", "#6693bf", "#624c83", "#5e857a", "#43436c"]

@@ -1,0 +1,90 @@
+// Factory hotkeys of this niri config (2026-10-26): Settings -> Hotkeys compares the live binds with these and offers Reset.
+// Same line format as config.kdl; the match is by what a bind does, so keep the action text identical.
+    // programs
+    Mod+T { spawn "alacritty"; }
+    Mod+Space { spawn-sh "qs -c lwts ipc call launcher toggle"; }
+    Mod+W { spawn-sh "helium --ozone-platform=wayland --enable-gpu-rasterization --enable-features=WaylandWindowDecorations,AcceleratedVideoDecodeLinuxGL,AcceleratedVideoEncoder,VaapiIgnoreDriverChecks --password-store=basic || firefox || chromium"; }
+    Mod+E { spawn-sh "dolphin --new-window ~"; }
+    Mod+L { spawn-sh "qs -c lwts ipc call lock lock"; }
+    Mod+V { spawn-sh "qs -c lwts ipc call clip toggle"; }
+    Mod+Shift+N { spawn-sh "qs -c lwts ipc call notes toggle"; }
+
+    // media, volume, brightness
+    XF86AudioRaiseVolume allow-when-locked=true { spawn-sh "wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.05+ -l 1.0"; }
+    XF86AudioLowerVolume allow-when-locked=true { spawn-sh "wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.05-"; }
+    XF86MonBrightnessUp allow-when-locked=true { spawn-sh "qs -c lwts ipc call brightness up || brightnessctl -q set 5%+"; }
+    XF86MonBrightnessDown allow-when-locked=true { spawn-sh "qs -c lwts ipc call brightness down || brightnessctl -q set 5%-"; }
+    XF86AudioMute allow-when-locked=true { spawn-sh "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"; }
+    XF86AudioMicMute allow-when-locked=true { spawn-sh "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"; }
+    XF86AudioPlay allow-when-locked=true { spawn-sh "playerctl play-pause"; }
+    XF86AudioStop allow-when-locked=true { spawn-sh "playerctl stop"; }
+    XF86AudioPrev allow-when-locked=true { spawn-sh "playerctl previous"; }
+    XF86AudioNext allow-when-locked=true { spawn-sh "playerctl next"; }
+
+    // windows
+    Mod+Q repeat=false { close-window; }
+    Mod+F { fullscreen-window; }
+    Mod+D { maximize-column; }
+    Mod+A { center-visible-columns; }
+    Mod+S { center-column; }
+    Mod+Alt+Space { toggle-window-floating; }
+    Mod+Minus { set-column-width "-10%"; }
+    Mod+Equal { set-column-width "+10%"; }
+    Mod+R { switch-preset-column-width; }
+    Mod+Shift+R { switch-preset-column-width-back; }
+    Mod+O repeat=false { toggle-overview; }
+
+    // focus / move (columns left-right, windows in a column up-down)
+    Mod+Left { focus-column-left; }
+    Mod+Right { focus-column-right; }
+    Mod+Up { focus-window-up; }
+    Mod+Down { focus-window-down; }
+    Mod+Ctrl+Left { move-column-left; }
+    Mod+Ctrl+Right { move-column-right; }
+    Mod+Ctrl+Up { move-window-up; }
+    Mod+Ctrl+Down { move-window-down; }
+    Mod+Tab { focus-monitor-next; }
+    // OFF until the switcher is fixed (D85, D86): Alt+Tab { spawn-sh "qs -c lwts ipc call switcher next"; }
+    // OFF until the switcher is fixed (D85, D86): Alt+Shift+Tab { spawn-sh "qs -c lwts ipc call switcher prev"; }
+    Mod+Home { focus-column-first; }
+    Mod+End { focus-column-last; }
+    Mod+Shift+Left { focus-monitor-left; }
+    Mod+Shift+Right { focus-monitor-right; }
+    Mod+Shift+Up { focus-monitor-up; }
+    Mod+Shift+Down { focus-monitor-down; }
+    Mod+Shift+Ctrl+Left { move-column-to-monitor-left; }
+    Mod+Shift+Ctrl+Right { move-column-to-monitor-right; }
+    Mod+Shift+Ctrl+Up { move-column-to-monitor-up; }
+    Mod+Shift+Ctrl+Down { move-column-to-monitor-down; }
+    Mod+BracketLeft { consume-or-expel-window-left; }
+    Mod+BracketRight { consume-or-expel-window-right; }
+
+    // workspaces (one list per monitor; the last one is always empty)
+    Mod+Page_Down { focus-workspace-down; }
+    Mod+Page_Up { focus-workspace-up; }
+    Mod+1 { focus-workspace 1; }
+    Mod+2 { focus-workspace 2; }
+    Mod+3 { focus-workspace 3; }
+    Mod+4 { focus-workspace 4; }
+    Mod+5 { focus-workspace 5; }
+    Mod+6 { focus-workspace 6; }
+    Mod+7 { focus-workspace 7; }
+    Mod+8 { focus-workspace 8; }
+    Mod+9 { focus-workspace 9; }
+    Mod+Alt+1 { move-column-to-workspace 1 focus=false; }
+    Mod+Alt+2 { move-column-to-workspace 2 focus=false; }
+    Mod+Alt+3 { move-column-to-workspace 3 focus=false; }
+    Mod+Alt+4 { move-column-to-workspace 4 focus=false; }
+    Mod+Alt+5 { move-column-to-workspace 5 focus=false; }
+    Mod+Alt+6 { move-column-to-workspace 6 focus=false; }
+    Mod+Alt+7 { move-column-to-workspace 7 focus=false; }
+    Mod+Alt+8 { move-column-to-workspace 8 focus=false; }
+    Mod+Alt+9 { move-column-to-workspace 9 focus=false; }
+
+    // screenshots (niri's own picker; saved to ~/Pictures/Screenshots and copied)
+    Mod+Shift+S { spawn-sh "qs -c lwts ipc call shot area"; }
+    Print { screenshot-screen; }
+    Alt+Print { screenshot-window; }
+
+    // session
+    Ctrl+Alt+Delete { quit; }

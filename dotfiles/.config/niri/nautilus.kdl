@@ -1,0 +1,7 @@
+// Nautilus only: GTK 4.24 / libadwaita 1.10 ignore CSS alpha, so translucency comes from niri. Keep opacity in step with `opacity` in ~/.config/themes/settings.toml.
+// draw-border-with-background false: otherwise the active border (#999) shows through the window and turns it grey while focused.
+// Included before lwts.kdl, which must stay last.
+window-rule {
+    match app-id=r#"^org\.gnome\.Nautilus$"#
+    draw-border-with-background false
+}

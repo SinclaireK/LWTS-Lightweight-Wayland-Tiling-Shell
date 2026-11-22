@@ -1,0 +1,13 @@
+name = "White"
+mode = "light"
+# from Omarchy (MIT, (c) David Heinemeier Hansson), github.com/basecamp/omarchy themes/white/colors.toml
+
+background = "#ffffff"
+foreground = "#000000"
+accent = "#6e6e6e"
+tertiary = "#2e2e2e"
+selection = "#c0c0c0"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#c0c0c0", "#2a2a2a", "#3a3a3a", "#4a4a4a", "#1a1a1a", "#2e2e2e", "#3e3e3e", "#000000"]
+ansi_bright = ["#c0c0c0", "#2a2a2a", "#3a3a3a", "#4a4a4a", "#1a1a1a", "#2e2e2e", "#3e3e3e", "#000000"]

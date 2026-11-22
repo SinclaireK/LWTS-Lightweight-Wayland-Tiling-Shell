@@ -1,0 +1,2 @@
+{ "id": "dataw", "name": "Data widgets", "version": "1", "contract": 1,
+  "tiles": "Tiles.qml", "settings": "Settings.qml" }

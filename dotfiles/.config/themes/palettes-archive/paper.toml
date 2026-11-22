@@ -1,0 +1,12 @@
+name = "Paper"
+mode = "light"
+
+background = "#f2eede"
+foreground = "#000000"
+accent = "#cc3e28"
+tertiary = "#1e6fcc"
+selection = "#d8d5c7"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#000000", "#cc3e28", "#216609", "#b58900", "#1e6fcc", "#5c21a5", "#158c86", "#aaaaaa"]
+ansi_bright = ["#555555", "#cc3e28", "#216609", "#b58900", "#1e6fcc", "#5c21a5", "#158c86", "#f2eede"]

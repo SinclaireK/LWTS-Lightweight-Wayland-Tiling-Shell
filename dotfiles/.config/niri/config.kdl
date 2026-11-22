@@ -1,0 +1,185 @@
+// niri config (ported from the Hyprland Lua config, 2026-10-24, Claude). Live-reloaded on save.
+// Everything the Settings app controls (gaps, borders, input, cursor, animations, blur, monitor overrides) is NOT here:
+// LWTS writes it to lwts.kdl, which is included LAST so it wins. Shortcuts and startup live here.
+
+// ---- monitors (base layout; Settings -> Displays overrides go into lwts.kdl) ----
+include "outputs.kdl"
+
+// ---- focus follows the mouse (Claude, 2026-10-24); the rest of input is generated in lwts.kdl ----
+input {
+    focus-follows-mouse max-scroll-amount="10%"
+    keyboard {
+        track-layout "window"
+    }
+}
+
+// ---- layout defaults (gaps, border, focus-ring come from lwts.kdl) ----
+layout {
+    center-focused-column "never"
+    always-center-single-column
+    default-column-width { proportion 0.5; }
+    preset-column-widths {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
+}
+
+prefer-no-csd
+screenshot-path "~/Pictures/Screenshots/%Y-%m-%d_%H-%M-%S.png"
+hotkey-overlay { skip-at-startup; }
+overview { zoom 0.5; }
+
+// ---- environment (from hyprland/core/env.lua; cursor theme/size are in lwts.kdl) ----
+environment {
+    QT_QPA_PLATFORM "wayland;xcb"
+    QT_QPA_PLATFORMTHEME "qt6ct"
+    GDK_BACKEND "wayland,x11,*"
+    SDL_VIDEODRIVER "wayland,x11"
+    ELECTRON_OZONE_PLATFORM_HINT "wayland"
+    GTK_USE_PORTAL "1"
+    MOZ_ENABLE_WAYLAND "1"
+    _JAVA_AWT_WM_NONREPARENTING "1"
+    MESA_VK_WSI_PRESENT_MODE "immediate"
+    MESA_SHADER_CACHE_MAX_SIZE "12G"
+    VKD3D_SWAPCHAIN_PRESENT_MODE "IMMEDIATE"
+    VKD3D_SWAPCHAIN_LATENCY_FRAMES "2"
+    DXVK_CONFIG "dxvk.latencySleep = True"
+    STEAM_COMPAT_CONFIG "dxvklowlatency,vkd3dlowlatency,lowlatencylayer,vkreflex"
+    LIBVA_DRIVER_NAME "radeonsi"
+    VDPAU_DRIVER "radeonsi"
+    ENABLE_LAYER_MESA_ANTI_LAG "1"
+    LWTS_NIRI "1"
+}
+
+// ---- startup ----
+// The shell (bar, launcher, lock, wallpaper, polkit agent, notifications, clipboard history, idle) is ONE process.
+spawn-at-startup "awww-daemon"
+spawn-at-startup "awww-daemon" "--namespace" "backdrop"   // overview backdrop (themes/backdrop.py)
+spawn-sh-at-startup "qs -c lwts"
+spawn-at-startup "wl-clip-persist" "--clipboard" "regular" "-e" "-f" "(?i)^(?!(?:image|audio|video|font|model)/|application/x-gtk).+"
+
+// ---- window rules ----
+// floating utilities
+window-rule {
+    match app-id=r#"^(pavucontrol-qt|org\.pulseaudio\.pavucontrol|nm-connection-editor|blueman-manager|org\.gnome\.FileRoller)$"#
+    open-floating true
+}
+window-rule {
+    match app-id=r#"^(steam)$"# title=r#"^notificationtoasts.*"#
+    open-floating true
+    open-focused false
+    default-floating-position x=16 y=16 relative-to="bottom-right"
+}
+// screen sharing indicator and polkit-style dialogs float
+window-rule {
+    match title=r#".*is sharing (a window|your screen).*"#
+    open-floating true
+}
+// games: adaptive sync while fullscreen on the VRR monitor
+window-rule {
+    match app-id=r#"^steam_app_.*"#
+    variable-refresh-rate true
+}
+
+// ---- shortcuts ----
+binds {
+    // programs
+    Mod+T { spawn "alacritty"; }
+    Mod+Space { spawn-sh "qs -c lwts ipc call launcher toggle"; }
+    Mod+W { spawn-sh "helium --ozone-platform=wayland --enable-gpu-rasterization --enable-features=WaylandWindowDecorations,AcceleratedVideoDecodeLinuxGL,AcceleratedVideoEncoder,VaapiIgnoreDriverChecks --password-store=basic || firefox || chromium"; }
+    Mod+E { spawn-sh "nautilus --new-window ~"; }
+    Mod+L { spawn-sh "qs -c lwts ipc call lock lock"; }
+    Mod+V { spawn-sh "qs -c lwts ipc call clip toggle"; }
+    Mod+Shift+N { spawn-sh "qs -c lwts ipc call notes toggle"; }
+    Mod+Alt+W { spawn-sh "qs -c lwts ipc call panels toggle net"; }
+
+    // media, volume, brightness
+    XF86AudioRaiseVolume allow-when-locked=true { spawn-sh "wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.05+ -l 1.0"; }
+    XF86AudioLowerVolume allow-when-locked=true { spawn-sh "wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.05-"; }
+    XF86MonBrightnessUp allow-when-locked=true { spawn-sh "mon-brightness up 5 || qs -c lwts ipc call brightness up || brightnessctl -q set 5%+"; }
+    XF86MonBrightnessDown allow-when-locked=true { spawn-sh "mon-brightness down 5 || qs -c lwts ipc call brightness down || brightnessctl -q set 5%-"; }
+    Mod+F6 { spawn-sh "mon-brightness up 5 || qs -c lwts ipc call brightness up || brightnessctl -q set 5%+"; }
+    Mod+F5 { spawn-sh "mon-brightness down 5 || qs -c lwts ipc call brightness down || brightnessctl -q set 5%-"; }
+    XF86AudioMute allow-when-locked=true { spawn-sh "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"; }
+    XF86AudioMicMute allow-when-locked=true { spawn-sh "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"; }
+    XF86AudioPlay allow-when-locked=true { spawn-sh "playerctl play-pause"; }
+    XF86AudioStop allow-when-locked=true { spawn-sh "playerctl stop"; }
+    XF86AudioPrev allow-when-locked=true { spawn-sh "playerctl previous"; }
+    XF86AudioNext allow-when-locked=true { spawn-sh "playerctl next"; }
+
+    // windows
+    Mod+Q repeat=false { close-window; }
+    Mod+F { fullscreen-window; }
+    Mod+D { maximize-column; }
+    Mod+A { center-visible-columns; }
+    Mod+S { center-column; }
+    Mod+Alt+Space { toggle-window-floating; }
+    Mod+Minus { set-column-width "-10%"; }
+    Mod+Equal { set-column-width "+10%"; }
+    Mod+R { switch-preset-column-width; }
+    Mod+Shift+R { switch-preset-column-width-back; }
+    Mod+O repeat=false { toggle-overview; }
+
+    // focus / move (columns left-right, windows in a column up-down)
+    Mod+Left { focus-column-left; }
+    Mod+Right { focus-column-right; }
+    Mod+Up { focus-window-up; }
+    Mod+Down { focus-window-down; }
+    Mod+Ctrl+Left { move-column-left; }
+    Mod+Ctrl+Right { move-column-right; }
+    Mod+Ctrl+Up { move-window-up; }
+    Mod+Ctrl+Down { move-window-down; }
+    Mod+Tab { focus-monitor-next; }
+    // OFF until the switcher is fixed (D85, D86): Alt+Tab { spawn-sh "qs -c lwts ipc call switcher next"; }
+    // OFF until the switcher is fixed (D85, D86): Alt+Shift+Tab { spawn-sh "qs -c lwts ipc call switcher prev"; }
+    Mod+Home { focus-column-first; }
+    Mod+End { focus-column-last; }
+    Mod+Shift+Left { focus-monitor-left; }
+    Mod+Shift+Right { focus-monitor-right; }
+    Mod+Shift+Up { focus-monitor-up; }
+    Mod+Shift+Down { focus-monitor-down; }
+    Mod+Shift+Ctrl+Left { move-column-to-monitor-left; }
+    Mod+Shift+Ctrl+Right { move-column-to-monitor-right; }
+    Mod+Shift+Ctrl+Up { move-column-to-monitor-up; }
+    Mod+Shift+Ctrl+Down { move-column-to-monitor-down; }
+    Mod+BracketLeft { consume-or-expel-window-left; }
+    Mod+BracketRight { consume-or-expel-window-right; }
+
+    // workspaces (one list per monitor; the last one is always empty)
+    Mod+Page_Down { focus-workspace-down; }
+    Mod+Page_Up { focus-workspace-up; }
+    Mod+1 { focus-workspace 1; }
+    Mod+2 { focus-workspace 2; }
+    Mod+3 { focus-workspace 3; }
+    Mod+4 { focus-workspace 4; }
+    Mod+5 { focus-workspace 5; }
+    Mod+6 { focus-workspace 6; }
+    Mod+7 { focus-workspace 7; }
+    Mod+8 { focus-workspace 8; }
+    Mod+9 { focus-workspace 9; }
+    Mod+Alt+1 { move-column-to-workspace 1 focus=false; }
+    Mod+Alt+2 { move-column-to-workspace 2 focus=false; }
+    Mod+Alt+3 { move-column-to-workspace 3 focus=false; }
+    Mod+Alt+4 { move-column-to-workspace 4 focus=false; }
+    Mod+Alt+5 { move-column-to-workspace 5 focus=false; }
+    Mod+Alt+6 { move-column-to-workspace 6 focus=false; }
+    Mod+Alt+7 { move-column-to-workspace 7 focus=false; }
+    Mod+Alt+8 { move-column-to-workspace 8 focus=false; }
+    Mod+Alt+9 { move-column-to-workspace 9 focus=false; }
+
+    // screenshots: Mod+Shift+S = tool panel over a frozen screen (overlays/ScreenshotArea.qml): Area / GIF drag, Window, Screen; Print / Alt+Print = niri, saved + copied
+    Ctrl+Shift+Escape { spawn-sh "qs -c lwts ipc call tasks toggle"; }   // Tasks window
+    Mod+Shift+S { spawn-sh "qs -c lwts ipc call shot area"; }
+    Print { screenshot-screen; }
+    Alt+Print { screenshot-window; }
+
+    // session
+    Ctrl+Alt+Delete { quit; }
+}
+
+include "nautilus.kdl"
+// the generated part (Settings): must stay last
+include "lwts.kdl"
+// per-app overrides that must beat the generated rules above
+include "portal-dialog.kdl"

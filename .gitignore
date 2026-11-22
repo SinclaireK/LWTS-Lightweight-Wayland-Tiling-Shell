@@ -1,0 +1,25 @@
+*.before-*
+*.bak
+*.log
+*.key
+*.pem
+*.gpg
+*.kdbx
+id_rsa*
+id_ed25519*
+*credentials*
+*cookie*
+*.sqlite
+.env*
+tt.csv
+*token*
+*secret*
+.smb*
+__pycache__/
+.removed/
+
+# local / generated, never committed 
+dotfiles/.config/niri/outputs.kdl
+dotfiles/.config/niri/lwts.kdl
+dotfiles/.config/themes/settings.toml
+dotfiles/.config/themes/settings.toml.prev

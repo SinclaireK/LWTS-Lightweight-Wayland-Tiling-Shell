@@ -1,0 +1,12 @@
+name = "Orange"
+mode = "dark"
+
+background = "#000000"
+foreground = "#ffa500"
+accent = "#ffcc66"
+tertiary = "#996300"
+selection = "#4d3200"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#332100", "#ff5f1f", "#ffcc66", "#ffd700", "#cc8400", "#ff8c42", "#ffb733", "#ffa500"]
+ansi_bright = ["#664200", "#ff7f4d", "#ffdd99", "#ffe44d", "#e69a1a", "#ffa970", "#ffc966", "#ffcc66"]

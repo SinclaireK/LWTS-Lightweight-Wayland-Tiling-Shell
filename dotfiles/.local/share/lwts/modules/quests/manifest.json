@@ -1,0 +1,1 @@
+{ "id": "quests", "name": "Daily quests", "version": "1", "contract": 1, "settings": "Settings.qml", "tiles": "Tiles.qml" }

@@ -1,0 +1,13 @@
+name = "Lumon"
+mode = "dark"
+# from Omarchy (MIT, (c) David Heinemeier Hansson), github.com/basecamp/omarchy themes/lumon/colors.toml
+
+background = "#16242d"
+foreground = "#d6e2ee"
+accent = "#8bc9eb"
+tertiary = "#8bc9eb"
+selection = "#243d56"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#1b2d40", "#4d86b0", "#5e95bc", "#6fa4c9", "#6fb8e3", "#8bc9eb", "#b4e4f6", "#d6e2ee"]
+ansi_bright = ["#4d86b0", "#73a6cb", "#86b7d8", "#9dcae5", "#f2fcff", "#b1d8ee", "#d1eef8", "#f2fcff"]

@@ -1,0 +1,85 @@
+#!/usr/bin/luajit
+-- lwts-module: install / remove optional LWTS modules (philosophy v2: base + modules).
+--   lwts-module list                 installed modules and the ones the sources offer
+--   lwts-module install <name|dir>   copy a module into <shell>/modules (shows what is inside, asks first; -y skips the question)
+--   lwts-module json                 the same as list, for the settings page
+--   lwts-module remove <id>          move it to modules/.removed (nothing is deleted)
+-- A module's palettes/*.toml go to ~/.config/themes/palettes (removed again with the module).
+-- Sources: ~/.config/lwts/sources.toml, lines `name = "/path/to/folder/of/modules"` (a git URL comes later).
+-- The shell reads modules at start: after a change run `qs -c lwts ipc call shell reload`.
+local HOME = os.getenv("HOME")
+local SHELL = os.getenv("LWTS_SHELL") or (HOME .. "/.config/quickshell/lwts")
+local MODS = SHELL .. "/modules"
+local CONTRACT = 1
+local PALETTES = HOME .. "/.config/themes/palettes"
+
+local function sh(c) local p = io.popen(c); local o = p:read("*a"); p:close(); return (o:gsub("%s+$", "")) end
+local function q(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
+local function exists(p) local f = io.open(p); if f then f:close(); return true end end
+local function read(p) local f = io.open(p); if not f then return nil end local s = f:read("*a"); f:close(); return s end
+local function field(m, k) return m:match('"' .. k .. '"%s*:%s*"(.-)"') end
+local function validId(s) return s and s:match("^[%a][%w_-]*$") end
+
+local function sources()
+  local t = {}
+  for line in (read(HOME .. "/.config/lwts/sources.toml") or ""):gmatch("[^\n]+") do
+    local name, path = line:match('^%s*([%w_-]+)%s*=%s*"(.-)"')
+    if name then t[#t + 1] = { name = name, path = (path:gsub("^~", HOME)) } end
+  end
+  return t
+end
+local function find(name)   -- a direct dir, or <source>/<name>
+  if exists(name .. "/manifest.json") then return (name:gsub("/$", "")) end
+  for _, s in ipairs(sources()) do if exists(s.path .. "/" .. name .. "/manifest.json") then return s.path .. "/" .. name end end
+end
+local function installed() local t = {}; for d in sh("ls " .. q(MODS) .. " 2>/dev/null"):gmatch("[^\n]+") do if exists(MODS .. "/" .. d .. "/manifest.json") then t[d] = true end end return t end
+
+local cmd, arg1, arg2 = arg[1], arg[2], arg[3]
+local yes = arg1 == "-y" or arg2 == "-y"; if arg1 == "-y" then arg1 = arg2 end
+
+if cmd == "list" then
+  local have = installed()
+  print("installed:"); for id in pairs(have) do print("  " .. id) end
+  print("available:")
+  for _, s in ipairs(sources()) do
+    for d in sh("ls " .. q(s.path) .. " 2>/dev/null"):gmatch("[^\n]+") do
+      local m = read(s.path .. "/" .. d .. "/manifest.json")
+      if m then print(string.format("  %-14s %s%s", d, field(m, "name") or "", have[d] and "  [installed]" or "")) end
+    end
+  end
+
+elseif cmd == "json" then   -- for Settings -> System -> Modules
+  local have, out = installed(), {}
+  for _, s in ipairs(sources()) do
+    for d in sh("ls " .. q(s.path) .. " 2>/dev/null"):gmatch("[^\n]+") do
+      local m = read(s.path .. "/" .. d .. "/manifest.json")
+      if m and validId(d) then out[#out + 1] = string.format('{"id":"%s","name":"%s","version":"%s","installed":%s}', d, (field(m, "name") or d):gsub('"', ""), (field(m, "version") or "?"):gsub('"', ""), have[d] and "true" or "false") end
+    end
+  end
+  print("[" .. table.concat(out, ",") .. "]")
+
+elseif cmd == "install" and arg1 then
+  local src = find(arg1); if not src then io.stderr:write("module not found: " .. arg1 .. "\n"); os.exit(1) end
+  local m = read(src .. "/manifest.json")
+  local id = field(m, "id")
+  if not validId(id) then io.stderr:write("bad module id in manifest\n"); os.exit(1) end
+  if tonumber(m:match('"contract"%s*:%s*(%d+)')) ~= CONTRACT then io.stderr:write("the module needs another contract (this shell: " .. CONTRACT .. ")\n"); os.exit(1) end
+  print("module " .. id .. " - " .. (field(m, "name") or "") .. " v" .. (field(m, "version") or "?") .. "\nfrom " .. src .. "\nfiles:")
+  print(sh("cd " .. q(src) .. " && find . -type f -printf '  %p  (%s B)\\n'"))
+  print("A module is QML code with the same access as you have: read it before you accept.")
+  if not yes then io.write("Install? [y/N] "); local a = io.read(); if not a or not a:lower():match("^y") then print("cancelled"); os.exit(1) end end
+  if installed()[id] then os.execute("mkdir -p " .. q(MODS .. "/.removed") .. " && mv " .. q(MODS .. "/" .. id) .. " " .. q(MODS .. "/.removed/" .. id .. "-" .. os.time())) end
+  os.execute("mkdir -p " .. q(MODS) .. " && cp -r " .. q(src) .. " " .. q(MODS .. "/" .. id))
+  os.execute("[ -d " .. q(src .. "/palettes") .. " ] && cp -n " .. q(src) .. "/palettes/*.toml " .. q(PALETTES) .. "/")   -- never overwrites a palette
+  print("installed " .. id .. ". Apply: qs -c lwts ipc call shell reload")
+
+elseif cmd == "remove" and validId(arg1) then
+  if not installed()[arg1] then io.stderr:write("not installed: " .. arg1 .. "\n"); os.exit(1) end
+  local trash = MODS .. "/.removed/" .. arg1 .. "-" .. os.time()
+  os.execute("mkdir -p " .. q(MODS .. "/.removed") .. " && mv " .. q(MODS .. "/" .. arg1) .. " " .. q(trash))
+  for f in sh("ls " .. q(trash .. "/palettes") .. " 2>/dev/null"):gmatch("[^\n]+") do os.execute("mv " .. q(PALETTES .. "/" .. f) .. " " .. q(trash .. "/palettes/" .. f .. ".installed")) end
+  print("removed " .. arg1 .. " (kept in modules/.removed). Apply: qs -c lwts ipc call shell reload")
+
+else
+  io.stderr:write("usage: lwts-module list | install [-y] <name|dir> | remove <id>\n"); os.exit(2)
+end

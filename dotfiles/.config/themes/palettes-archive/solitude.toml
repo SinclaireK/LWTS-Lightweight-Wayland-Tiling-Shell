@@ -1,0 +1,13 @@
+name = "Solitude"
+mode = "dark"
+# from Omarchy (MIT, (c) David Heinemeier Hansson), github.com/basecamp/omarchy themes/solitude/colors.toml
+
+background = "#101315"
+foreground = "#cacccc"
+accent = "#798186"
+tertiary = "#aeaeae"
+selection = "#343d41"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#101315", "#565d60", "#9fa5a9", "#d9dbdc", "#798186", "#aeaeae", "#707070", "#cacccc"]
+ansi_bright = ["#4b4e55", "#de6145", "#343d41", "#c9c2b4", "#5d6367", "#9a9a9a", "#707070", "#a5aeb4"]

@@ -1,0 +1,13 @@
+# Own gem palette (Claude, 2026-11-17): emerald banded green. OKLCH-generated, family pair malachite-light/-dark; Nothing look: tinted near-black / paper, one signal colour.
+name = "Malachite Light"
+mode = "light"
+
+background = "#eef6f1"
+foreground = "#16211a"
+accent = "#006d42"
+tertiary = "#0c707a"
+selection = "#cfdfd5"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#4c5951", "#a23c3f", "#23762c", "#756203", "#2463ae", "#8c4287", "#0a7176", "#a5ada8"]
+ansi_bright = ["#68756d", "#912d31", "#0d671d", "#655406", "#12549e", "#7d3378", "#016266", "#818884"]

@@ -1,0 +1,12 @@
+name = "Flat Remix"
+mode = "dark"
+
+background = "#272a34"
+foreground = "#e6e6e6"
+accent = "#367bf0"
+tertiary = "#19a187"
+selection = "#3a3e4a"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#1f2229", "#d41919", "#19a187", "#fea44c", "#367bf0", "#b8174c", "#4aaee6", "#c8c8c8"]
+ansi_bright = ["#535867", "#ec0101", "#47d4b9", "#ff8a18", "#277fff", "#d71655", "#05a1f7", "#ffffff"]

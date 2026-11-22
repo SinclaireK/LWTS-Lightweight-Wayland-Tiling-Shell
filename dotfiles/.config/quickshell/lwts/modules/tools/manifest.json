@@ -1,0 +1,1 @@
+{ "id": "tools", "name": "Tools", "version": "1", "contract": 1, "tiles": "Tiles.qml", "settings": "Settings.qml" }

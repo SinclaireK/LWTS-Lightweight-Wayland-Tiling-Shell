@@ -1,0 +1,15 @@
+// GTK3 portal dialogs (file chooser): the CSD shadow margin is transparent, so niri's border and the global blur (lwts.kdl) showed through as a frame.
+// Included AFTER lwts.kdl on purpose: its catch-all rule sets blur, and a later rule wins. Touches only this app-id.
+window-rule {
+    match app-id=r#"^Xdg-desktop-portal-gtk$"#
+    draw-border-with-background false
+    border {
+        off
+    }
+    shadow {
+        off
+    }
+    background-effect {
+        blur false
+    }
+}

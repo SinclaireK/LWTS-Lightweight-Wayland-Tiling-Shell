@@ -1,0 +1,12 @@
+name = "Ayu Dark"
+mode = "dark"
+
+background = "#0b0e14"
+foreground = "#bfbdb6"
+accent = "#e6b450"
+tertiary = "#39bae6"
+selection = "#233446"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#1e232b", "#f07178", "#aad94c", "#e6b450", "#59c2ff", "#d2a6ff", "#95e6cb", "#bfbdb6"]
+ansi_bright = ["#565b66", "#f58c90", "#bbe36a", "#ffb454", "#73b8ff", "#dfbfff", "#a8eed6", "#ffffff"]

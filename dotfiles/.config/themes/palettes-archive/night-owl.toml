@@ -1,0 +1,12 @@
+name = "Night Owl"
+mode = "dark"
+
+background = "#011627"
+foreground = "#d6deeb"
+accent = "#82aaff"
+tertiary = "#addb67"
+selection = "#1d3b53"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#1d3b53", "#ef5350", "#22da6e", "#addb67", "#82aaff", "#c792ea", "#21c7a8", "#d6deeb"]
+ansi_bright = ["#637777", "#ef5350", "#22da6e", "#ffeb95", "#82aaff", "#c792ea", "#7fdbca", "#ffffff"]

@@ -1,0 +1,13 @@
+# Nothing-adapted (Claude, 2026-11-07): background near-black / paper, text near-white / near-black, the family accent kept as the one signal colour. Original: ../palettes-archive/originals/gothic-crypt.toml
+name = "Gothic Crypt"
+mode = "dark"
+
+background = "#08060a"
+foreground = "#e5e0ea"
+accent = "#a63a5a"
+tertiary = "#6f5f8f"
+selection = "#1e1825"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#1e1a26", "#b0404f", "#5f8a6a", "#b89b52", "#5f6fa8", "#8c5a9a", "#4f8f95", "#cfc6d8"]
+ansi_bright = ["#3a3347", "#d0586a", "#79a584", "#d4b86a", "#7d8fc9", "#a97ab8", "#6bb0b6", "#efe8f5"]

@@ -1,0 +1,13 @@
+# Nothing-adapted (Claude, 2026-11-07): background near-black / paper, text near-white / near-black, the family accent kept as the one signal colour. Original: ../palettes-archive/originals/catppuccin-latte.toml
+name = "Catppuccin Latte"
+mode = "light"
+
+background = "#f1f2f0"
+foreground = "#22242f"
+accent = "#8839ef"
+tertiary = "#179299"
+selection = "#d7d9dd"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#5c5f77", "#d20f39", "#40a02b", "#df8e1d", "#1e66f5", "#ea76cb", "#179299", "#acb0be"]
+ansi_bright = ["#6c6f85", "#d20f39", "#40a02b", "#df8e1d", "#1e66f5", "#ea76cb", "#179299", "#bcc0cc"]

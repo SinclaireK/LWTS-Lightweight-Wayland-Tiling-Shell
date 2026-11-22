@@ -1,0 +1,12 @@
+name = "Catppuccin Mocha"
+mode = "dark"
+
+background = "#1e1e2e"
+foreground = "#cdd6f4"
+accent = "#cba6f7"
+tertiary = "#94e2d5"
+selection = "#45475a"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#45475a", "#f38ba8", "#a6e3a1", "#f9e2af", "#89b4fa", "#f5c2e7", "#94e2d5", "#bac2de"]
+ansi_bright = ["#585b70", "#f38ba8", "#a6e3a1", "#f9e2af", "#89b4fa", "#f5c2e7", "#94e2d5", "#a6adc8"]

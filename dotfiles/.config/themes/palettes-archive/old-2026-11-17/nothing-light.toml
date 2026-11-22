@@ -1,0 +1,13 @@
+# Nothing (Nothing OS look; colours from the community brand reference nothing.wiki/nothing/brand_reference), light: white paper, black text, black "on", red only for alerts; everything else monochrome greys. (Claude, 2026-11-07)
+name = "Nothing Light"
+mode = "light"
+
+background = "#f2f2ee"   # N-Grey (the reference gives RGB 242/242/238; its hex #DCD7D2 does not match)
+foreground = "#000000"
+accent = "#000000"   # Nothing: no colour accent, "on" = black; red stays in ansi (alerts / Theme.red)
+tertiary = "#5a5c5c"
+selection = "#e2e2e0"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#000000", "#c8102e", "#3d7a3d", "#9a7a10", "#002f6c", "#5e5e5e", "#555555", "#b1b3b3"]   # N-Red, N-Blue from the brand reference
+ansi_bright = ["#3a3a3a", "#b0141b", "#2f6a2f", "#80650c", "#333333", "#444444", "#404040", "#f4f4f2"]

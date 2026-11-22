@@ -1,0 +1,152 @@
+#!/usr/bin/python3
+"""Set the DPI of a Hator Stellar PRO (wired, 04d9:a09f) on Linux.
+
+Protocol recovered from the official MouseConfig.exe (hidapi calls captured under Wine against a fake device,
+cipher reimplemented and checked against real traffic and a real handshake reply from the mouse):
+  * every command is 8 bytes: [cmd, p1..p6, chk] with chk = ~sum(first 7) & 0xff, then "USBDataEncryption"
+    (byte swap + xor key + rotate + add table) before it goes out as a HID feature report on interface 2
+  * 32-byte data blocks (DPI table) go out as plain output reports on endpoint 3
+  * the handshake (magic aa dd 3b 62) is sent once per session
+
+This tool sets all 6 DPI slots to the same value so the DPI button on the mouse changes nothing.
+Usage: lwts-mousedpi detect | set <dpi> [--dry-run]. Used by LWTS Settings -> Input -> Mouse. Needs python-pyusb and the udev rule
+71-luom-g10.rules (uaccess for 04d9:a09f). Runs only when the setting changes; it is not in the input path (no latency).
+"""
+import argparse
+import sys
+import time
+
+K = [0, 0x46, 0x42, 0x31, 0x35, 0x30, 0x37, 0]
+T = [0x52, 0x6F, 0x4E, 0x67, 0x74, 0x45, 0x6E, 0x67]
+VID, PID, IFACE = 0x04D9, 0xA09F, 2
+
+
+def rol4(x):
+    return ((x << 4) | (x >> 4)) & 0xFF
+
+
+def swap(b):
+    b = list(b)
+    for i, j in ((0, 5), (1, 4), (2, 7), (3, 6)):
+        b[i], b[j] = b[j], b[i]
+    return b
+
+
+def rotl3(b):
+    x = int.from_bytes(bytes(b), "big")
+    return list((((x << 3) | (x >> 61)) & (2**64 - 1)).to_bytes(8, "big"))
+
+
+def rotr3(b):
+    x = int.from_bytes(bytes(b), "big")
+    return list((((x >> 3) | (x << 61)) & (2**64 - 1)).to_bytes(8, "big"))
+
+
+def enc(p):
+    b = swap(p)
+    for i in range(1, 7):
+        b[i] ^= K[i]
+    b = rotl3(b)
+    return bytes((b[i] + rol4(T[i] if i else 0x52)) & 0xFF for i in range(8))
+
+
+def dec(c):
+    b = [(c[i] - rol4(T[i] if i else 0x52)) & 0xFF for i in range(8)]
+    b = rotr3(b)
+    for i in range(1, 7):
+        b[i] ^= K[i]
+    return bytes(swap(b))
+
+
+def cmd(*parts):
+    body = list(parts) + [0] * (7 - len(parts))
+    body.append((~sum(body)) & 0xFF)
+    return bytes(body)
+
+
+def dpi_reg(dpi):
+    # fitted on the official app's packets: 1000->0x0b 1200->0x0d 1600->0x12 2400->0x1b 4000->0x2f 6000->0x47 8000->0x5f
+    if dpi == 16000:
+        return 0xBD  # value the app writes for its maximum
+    return (dpi * 12 // 1000) - 1
+
+
+def plan(dpi, slot=0):
+    reg = dpi_reg(dpi)
+    table = bytes([reg] * 6) + bytes(25) + bytes([0x94])  # 6 slots, zero padding, trailing 0x94 as in the app
+    assert len(table) == 32
+    return [
+        ("feat", cmd(0x83), "session start"),
+        ("feat", cmd(0x01, slot), "active slot"),
+        ("feat", cmd(0x11, 0x06, 0x08), "DPI table follows"),
+        ("out", table, "DPI table (reg=0x%02x)" % reg),
+        ("feat", cmd(0x08, 0xAA, 0xCC, 0xEE), "commit"),
+    ]
+
+
+def present():
+    import glob
+    for d in glob.glob("/sys/bus/usb/devices/*"):
+        try:
+            if open(d + "/idVendor").read().strip() == "04d9" and open(d + "/idProduct").read().strip() == "a09f":
+                return True
+        except OSError:
+            pass
+    return False
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="op", required=True)
+    sub.add_parser("detect")
+    sp = sub.add_parser("set")
+    sp.add_argument("dpi", type=int, help="DPI, multiple of 100, 400..16000")
+    sp.add_argument("--dry-run", action="store_true")
+    a = ap.parse_args()
+    if a.op == "detect":
+        sys.exit(0 if present() else 1)
+    if a.dpi % 100 or not 400 <= a.dpi <= 16000:
+        sys.exit("DPI must be a multiple of 100 between 400 and 16000")
+    steps = plan(a.dpi)
+    if a.dry_run:
+        for kind, data, why in steps:
+            print("%-4s %-26s plain=%s wire=%s" % (kind, why, data.hex(), enc(data).hex() if kind == "feat" else data.hex()))
+        return
+
+    import usb.core
+    import usb.util
+
+    dev = usb.core.find(idVendor=VID, idProduct=PID)
+    if dev is None:
+        sys.exit("mouse not found")
+    usb.util.claim_interface(dev, IFACE)
+
+    def setf(b8):
+        dev.ctrl_transfer(0x21, 0x09, 0x0300, IFACE, bytes(b8))
+
+    def getf():
+        return bytes(dev.ctrl_transfer(0xA1, 0x01, 0x0300, IFACE, 8))
+
+    try:
+        magic = bytes.fromhex("00aadd3b620000db")
+        setf(magic)
+        time.sleep(0.1)
+        setf(enc(magic))
+        time.sleep(0.01)
+        reply = dec(getf())
+        print("handshake reply:", reply.hex(), "OK" if reply[1] == 0xAA else "UNEXPECTED, stopping")
+        if reply[1] != 0xAA:
+            sys.exit(2)
+        for kind, data, why in steps:
+            if kind == "feat":
+                setf(enc(data))
+            else:
+                dev.write(0x03, data, timeout=1000)
+            time.sleep(0.01)
+        print("sent. DPI should now be %d on all 6 slots." % a.dpi)
+    finally:
+        usb.util.release_interface(dev, IFACE)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,143 @@
+#!/usr/bin/luajit
+-- lwts-sys: one JSON line per second for the Tasks window's Performance tab: load / interrupts / handles / uptime, per-core clock,
+-- memory breakdown, per-disk activity (IOPS, active %, response, queue), per-interface traffic, GPU clocks / fan / power. Stop with SIGTERM.
+local function read(p) local f = io.open(p); if not f then return nil end; local s = f:read("*a"); f:close(); return s end
+local function num(p) local s = read(p); return s and tonumber(s:match("^%s*(-?[%d.]+)")) or nil end
+local function sh(c) local h = io.popen(c .. " 2>/dev/null"); local s = h:read("*a"); h:close(); return s end
+local function enc(v)
+  local t = type(v)
+  if t == "number" then if v ~= v or v == math.huge or v == -math.huge then return "0" end; return (v == math.floor(v) and math.abs(v) < 1e15) and ("%.0f"):format(v) or ("%.4g"):format(v)
+  elseif t == "boolean" then return tostring(v)
+  elseif t == "string" then return '"' .. v:gsub('[%c"\\]', function(c) return c == '"' and '\\"' or c == "\\" and "\\\\" or " " end) .. '"'
+  elseif t == "table" then
+    if #v > 0 or next(v) == nil then local o = {}; for i, x in ipairs(v) do o[i] = enc(x) end; return "[" .. table.concat(o, ",") .. "]" end
+    local o = {}; for k, x in pairs(v) do o[#o + 1] = enc(tostring(k)) .. ":" .. enc(x) end; return "{" .. table.concat(o, ",") .. "}"
+  end
+  return "null"
+end
+local function lines(s) return (s or ""):gmatch("[^\n]+") end
+
+-- ---- static-ish facts, refreshed slowly
+local disks, nets = {}, {}
+local function listDisks()
+  local out = {}
+  for n in lines(sh("ls /sys/block")) do
+    if n:match("^nvme%d+n%d+$") or n:match("^sd%a+$") or n:match("^vd%a+$") or n:match("^mmcblk%d+$") then
+      local d = { n = n, size = (num("/sys/block/" .. n .. "/size") or 0) * 512 }
+      d.model = ((read("/sys/block/" .. n .. "/device/model") or ""):gsub("%s+$", ""))
+      d.kind = n:match("^nvme") and "NVMe" or (num("/sys/block/" .. n .. "/queue/rotational") == 1 and "HDD" or "SSD")
+      local hw = sh("ls -d /sys/block/" .. n .. "/device/hwmon*/ /sys/block/" .. n .. "/device/device/hwmon*/ 2>/dev/null"):match("(%S+)")
+      d.hw = hw and hw:gsub("/$", "") or nil
+      out[#out + 1] = d
+    end
+  end
+  return out
+end
+local function listNets()
+  local out = {}
+  for n in lines(sh("ls /sys/class/net")) do
+    if not (n == "lo" or n:match("^veth") or n:match("^docker") or n:match("^br%-") or n:match("^virbr")) then
+      out[#out + 1] = { n = n, wifi = read("/sys/class/net/" .. n .. "/phy80211/name") ~= nil, tun = n:match("^tun") or n:match("^wg") or n:match("^proton") or n:match("^tailscale") }
+    end
+  end
+  return out
+end
+local ips, ssid = {}, ""
+local function refreshNet()
+  ips = {}
+  for l in lines(sh("ip -4 -o addr show")) do local i, a = l:match("^%d+:%s+(%S+)%s+inet%s+(%S+)"); if i then ips[i] = a end end
+  ssid = (sh("nmcli -t -f active,ssid dev wifi"):match("yes:([^\n]*)")) or ""
+end
+local gpuDir
+for c in lines(sh("ls -d /sys/class/drm/card*/device")) do if read(c .. "/gpu_busy_percent") then gpuDir = c; break end end
+local gpuHw = gpuDir and sh("ls -d " .. gpuDir .. "/hwmon/hwmon*"):match("(%S+)") or nil
+local function dpm(f) local s = read(gpuDir .. "/" .. f); if not s then return nil end; for l in lines(s) do if l:find("%*") then return tonumber(l:match(":%s*(%d+)")) end end end
+
+-- ---- rate state
+local prevUp, prevStat, prevDisk, prevNet = nil, nil, {}, {}
+local tick = 0
+while true do
+  if tick % 30 == 0 then disks, nets = listDisks(), listNets(); refreshNet() end
+  local up = tonumber((read("/proc/uptime") or "1"):match("^[%d.]+")) or 1
+  local dt = prevUp and math.max(0.2, up - prevUp) or 1
+  local o = { up = up }
+  -- load, handles, threads
+  local la = read("/proc/loadavg") or ""
+  o.load = { tonumber(la:match("^(%S+)")), tonumber(la:match("^%S+%s+(%S+)")), tonumber(la:match("^%S+%s+%S+%s+(%S+)")) }
+  o.threads = tonumber(la:match("%d+/(%d+)"))
+  o.handles = tonumber((read("/proc/sys/fs/file-nr") or ""):match("^(%d+)"))
+  -- interrupts / context switches per second
+  local st = read("/proc/stat") or ""
+  local ctxt, intr = tonumber(st:match("\nctxt (%d+)")), tonumber(st:match("\nintr (%d+)"))
+  if prevStat then o.ctxt = (ctxt - prevStat[1]) / dt; o.intr = (intr - prevStat[2]) / dt end
+  prevStat = { ctxt, intr }
+  -- per-core clock (MHz)
+  local fr = {}
+  for k = 0, 255 do local v = num(("/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq"):format(k)); if not v then break end; fr[#fr + 1] = v / 1000 end
+  o.freq = fr
+  -- memory (MB)
+  local m = {}
+  for k, v in (read("/proc/meminfo") or ""):gmatch("(%w+):%s+(%d+)") do m[k] = tonumber(v) / 1024 end
+  o.mem = { total = m.MemTotal, avail = m.MemAvailable, free = m.MemFree, buffers = m.Buffers, cached = (m.Cached or 0) + (m.SReclaimable or 0), swapTotal = m.SwapTotal, swapFree = m.SwapFree,
+            swapCached = m.SwapCached, dirty = m.Dirty, slab = m.Slab, shmem = m.Shmem, committed = m.Committed_AS, anon = m.AnonPages }
+  -- disks
+  local ds = {}
+  for line in lines(read("/proc/diskstats")) do
+    local name, f = line:match("^%s*%d+%s+%d+%s+(%S+)%s+(.*)$")
+    for _, d in ipairs(disks) do
+      if d.n == name then
+        local v = {}; for x in f:gmatch("%d+") do v[#v + 1] = tonumber(x) end
+        local cur = { v[1], v[3], v[4], v[5], v[7], v[8], v[10], v[11], v[9] }   -- rd ios, rd sec, rd ms, wr ios, wr sec, wr ms ...
+        local p = prevDisk[name]
+        local r = { n = name, model = d.model, kind = d.kind, size = d.size, queue = v[9] or 0 }
+        -- v: 1 rd_ios 2 rd_merge 3 rd_sec 4 rd_ms 5 wr_ios 6 wr_merge 7 wr_sec 8 wr_ms 9 inflight 10 io_ticks
+        local c = { rdi = v[1], rds = v[3], rdm = v[4], wri = v[5], wrs = v[7], wrm = v[8], tk = v[10] }
+        if p then
+          r.rd = (c.rds - p.rds) * 512 / dt; r.wr = (c.wrs - p.wrs) * 512 / dt
+          r.riops = (c.rdi - p.rdi) / dt; r.wiops = (c.wri - p.wri) / dt
+          r.active = math.min(100, (c.tk - p.tk) / (dt * 10))
+          local n = (c.rdi - p.rdi) + (c.wri - p.wri)
+          r.resp = n > 0 and ((c.rdm - p.rdm) + (c.wrm - p.wrm)) / n or 0
+        else r.rd, r.wr, r.riops, r.wiops, r.active, r.resp = 0, 0, 0, 0, 0, 0 end
+        prevDisk[name] = c
+        if d.hw then local t = num(d.hw .. "/temp1_input"); if t then r.temp = t / 1000 end end
+        ds[#ds + 1] = r
+      end
+    end
+  end
+  o.disks = ds
+  -- network
+  local ns = {}
+  for line in lines(read("/proc/net/dev")) do
+    local ifc, f = line:match("^%s*([^:]+):%s*(.*)$")
+    for _, nn in ipairs(nets) do
+      if nn.n == ifc then
+        local v = {}; for x in f:gmatch("%d+") do v[#v + 1] = tonumber(x) end
+        local p = prevNet[ifc]
+        local r = { n = ifc, wifi = nn.wifi, tun = nn.tun and true or false, rxT = v[1], txT = v[9], ip = ips[ifc] or "", state = (read("/sys/class/net/" .. ifc .. "/operstate") or "?"):gsub("%s+$", "") }
+        r.rx = p and (v[1] - p[1]) / dt or 0; r.tx = p and (v[9] - p[2]) / dt or 0
+        prevNet[ifc] = { v[1], v[9] }
+        local sp = num("/sys/class/net/" .. ifc .. "/speed"); if sp and sp > 0 then r.link = sp end
+        if nn.wifi then r.ssid = ssid; local sig = (read("/proc/net/wireless") or ""):match(ifc .. ":%s+%S+%s+(%-?%d+)"); r.signal = sig and tonumber(sig) end
+        ns[#ns + 1] = r
+      end
+    end
+  end
+  o.nets = ns
+  -- gpu
+  if gpuDir then
+    o.gpu = { busy = num(gpuDir .. "/gpu_busy_percent"), membusy = num(gpuDir .. "/mem_busy_percent"), sclk = dpm("pp_dpm_sclk"), mclk = dpm("pp_dpm_mclk"),
+              vram = num(gpuDir .. "/mem_info_vram_used"), vramTotal = num(gpuDir .. "/mem_info_vram_total") }
+    if gpuHw then
+      if not o.gpu.mclk then local f = num(gpuHw .. "/freq2_input"); if f then o.gpu.mclk = f / 1e6 end end
+      if not o.gpu.sclk then local f = num(gpuHw .. "/freq1_input"); if f then o.gpu.sclk = f / 1e6 end end
+      o.gpu.fan = num(gpuHw .. "/fan1_input"); local pw = num(gpuHw .. "/pwm1"); o.gpu.fanPct = pw and pw / 255 * 100 or nil
+      o.gpu.power = (num(gpuHw .. "/power1_average") or 0) / 1e6; o.gpu.cap = (num(gpuHw .. "/power1_cap") or 0) / 1e6
+      o.gpu.tEdge = (num(gpuHw .. "/temp1_input") or 0) / 1000; o.gpu.tJunc = (num(gpuHw .. "/temp2_input") or 0) / 1000; o.gpu.tMem = (num(gpuHw .. "/temp3_input") or 0) / 1000
+    end
+  end
+  prevUp = up
+  io.write(enc(o), "\n"); io.stdout:flush()
+  tick = tick + 1
+  os.execute("sleep 1")
+end

@@ -1,0 +1,13 @@
+# Own gem palette (Claude, 2026-11-17): deep corn-flower blue. OKLCH-generated, family pair sapphire-light/-dark; Nothing look: tinted near-black / paper, one signal colour.
+name = "Sapphire Dark"
+mode = "dark"
+
+background = "#080a0f"
+foreground = "#e4e8ef"
+accent = "#72a3fe"
+tertiary = "#54c9e3"
+selection = "#222935"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#373d48", "#f38c8a", "#79c37c", "#c7ad45", "#76b1fc", "#da90d4", "#15c5cd", "#b9bec6"]
+ansi_bright = ["#5d646f", "#fe9b98", "#85d088", "#d4b953", "#8cbefe", "#e89de1", "#32d2da", "#e1e5eb"]

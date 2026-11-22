@@ -1,0 +1,13 @@
+# Own gem palette (Claude, 2026-11-17): dark wine red. OKLCH-generated, family pair garnet-light/-dark; Nothing look: tinted near-black / paper, one signal colour.
+name = "Garnet Light"
+mode = "light"
+
+background = "#faf1f1"
+foreground = "#271a1a"
+accent = "#a22236"
+tertiary = "#925019"
+selection = "#e9d5d5"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#605151", "#a23c3f", "#23762c", "#756203", "#2463ae", "#8c4287", "#0a7176", "#b2a8a8"]
+ansi_bright = ["#7d6d6d", "#912d31", "#0d671d", "#655406", "#12549e", "#7d3378", "#016266", "#8c8484"]

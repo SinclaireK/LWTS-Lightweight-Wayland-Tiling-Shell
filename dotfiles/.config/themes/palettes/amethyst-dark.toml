@@ -1,0 +1,13 @@
+# Own gem palette (Claude, 2026-11-17): violet. OKLCH-generated, family pair amethyst-light/-dark; Nothing look: tinted near-black / paper, one signal colour.
+name = "Amethyst Dark"
+mode = "dark"
+
+background = "#0b090e"
+foreground = "#e9e6ed"
+accent = "#c190f6"
+tertiary = "#ea9bc7"
+selection = "#2c2633"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#3f3b46", "#f38c8a", "#79c37c", "#c7ad45", "#76b1fc", "#da90d4", "#15c5cd", "#bfbcc4"]
+ansi_bright = ["#66616d", "#fe9b98", "#85d088", "#d4b953", "#8cbefe", "#e89de1", "#32d2da", "#e6e3ea"]

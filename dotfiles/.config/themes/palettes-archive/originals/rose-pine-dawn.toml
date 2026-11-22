@@ -1,0 +1,12 @@
+name = "Rosé Pine Dawn"
+mode = "light"
+
+background = "#faf4ed"
+foreground = "#575279"
+accent = "#907aa9"
+tertiary = "#d7827e"
+selection = "#dfdad9"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#f2e9e1", "#b4637a", "#286983", "#ea9d34", "#56949f", "#907aa9", "#d7827e", "#575279"]
+ansi_bright = ["#9893a5", "#b4637a", "#286983", "#ea9d34", "#56949f", "#907aa9", "#d7827e", "#575279"]

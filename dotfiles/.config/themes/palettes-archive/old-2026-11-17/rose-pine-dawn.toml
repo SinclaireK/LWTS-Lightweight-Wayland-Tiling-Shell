@@ -1,0 +1,13 @@
+# Nothing-adapted (Claude, 2026-11-07): background near-black / paper, text near-white / near-black, the family accent kept as the one signal colour. Original: ../palettes-archive/originals/rose-pine-dawn.toml
+name = "Rosé Pine Dawn"
+mode = "light"
+
+background = "#f5f3ee"
+foreground = "#272536"
+accent = "#907aa9"
+tertiary = "#d7827e"
+selection = "#e0dedc"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#f2e9e1", "#b4637a", "#286983", "#ea9d34", "#56949f", "#907aa9", "#d7827e", "#575279"]
+ansi_bright = ["#9893a5", "#b4637a", "#286983", "#ea9d34", "#56949f", "#907aa9", "#d7827e", "#575279"]

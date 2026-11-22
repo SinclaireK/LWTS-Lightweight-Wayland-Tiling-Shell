@@ -1,0 +1,13 @@
+name = "Lupine"
+mode = "light"
+# from Omarchy (MIT, (c) David Heinemeier Hansson), github.com/basecamp/omarchy themes/lupine/colors.toml
+
+background = "#fafafa"
+foreground = "#212121"
+accent = "#3264eb"
+tertiary = "#8a4ad7"
+selection = "#d0d0d0"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#f5f5f5", "#c900c4", "#4a2fd0", "#026fde", "#3264eb", "#8a4ad7", "#0c67de", "#212121"]
+ansi_bright = ["#757575", "#f930fb", "#9f85e0", "#358fff", "#5482ff", "#b363ff", "#3986ff", "#000000"]

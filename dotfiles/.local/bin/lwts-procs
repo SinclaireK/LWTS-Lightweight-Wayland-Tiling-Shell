@@ -1,0 +1,88 @@
+#!/usr/bin/luajit
+-- lwts-procs: one JSON line per second for the Tasks window (apps grouped by process name + per-core load).
+-- cpu = share of the WHOLE machine (like Windows' Task Manager), mem = RSS MB (shared pages count per process). Stop it with SIGTERM.
+local PAGE = 4096
+local function read(p) local f = io.open(p); if not f then return nil end; local s = f:read("*a"); f:close(); return s end
+local function esc(s) return (s:gsub('[%c"\\]', function(c) return c == '"' and '\\"' or c == "\\" and "\\\\" or " " end)) end
+local prevCore, prevProc, prevTotal = {}, {}, 0
+local prevUp, prevDisk, prevNet = 0, nil, nil
+local function diskNow()   -- bytes read / written by the whole disks (not partitions)
+  local r, w = 0, 0
+  for line in (read("/proc/diskstats") or ""):gmatch("[^\n]+") do
+    local name, sr, sw = line:match("^%s*%d+%s+%d+%s+(%S+)%s+%d+%s+%d+%s+(%d+)%s+%d+%s+%d+%s+%d+%s+(%d+)")
+    if name and (name:match("^nvme%d+n%d+$") or name:match("^sd%a+$") or name:match("^vd%a+$") or name:match("^mmcblk%d+$")) then r = r + sr * 512; w = w + sw * 512 end
+  end
+  return r, w
+end
+local function netNow()   -- bytes received / sent by real interfaces
+  local rx, tx = 0, 0
+  for line in (read("/proc/net/dev") or ""):gmatch("[^\n]+") do
+    local ifc, f = line:match("^%s*([^:]+):%s*(.*)$")
+    if ifc and not ifc:match("^lo$") and not ifc:match("^veth") and not ifc:match("^docker") and not ifc:match("^br%-") and not ifc:match("^virbr") then
+      local n = {}
+      for v in f:gmatch("%d+") do n[#n + 1] = tonumber(v) end
+      rx = rx + (n[1] or 0); tx = tx + (n[9] or 0)
+    end
+  end
+  return rx, tx
+end
+local first = true
+while true do
+  local cores, total = {}, 0
+  for line in (read("/proc/stat") or ""):gmatch("[^\n]+") do
+    local id, rest = line:match("^cpu(%d*)%s+(.*)$")
+    if id then
+      local f, sum = {}, 0
+      for n in rest:gmatch("%d+") do f[#f + 1] = tonumber(n); sum = sum + f[#f] end
+      local idle = (f[4] or 0) + (f[5] or 0)
+      if id == "" then total = sum
+      else
+        local k = tonumber(id) + 1
+        local p = prevCore[k]
+        cores[k] = p and (sum - p[2]) > 0 and 1 - (idle - p[1]) / (sum - p[2]) or 0
+        prevCore[k] = { idle, sum }
+      end
+    end
+  end
+  local ncpu = math.max(1, #cores)
+  local dTotal = total - prevTotal   -- jiffies over all cores since the last sample
+  local groups, order, cur, plist = {}, {}, {}, {}
+  local ph = io.popen("cat /proc/[0-9]*/stat 2>/dev/null")
+  for line in ph:lines() do
+    local pid, name, rest = line:match("^(%d+) %((.*)%) (.*)$")
+    if pid then
+      local f, i = {}, 0
+      for w in rest:gmatch("%S+") do i = i + 1; f[i] = w; if i >= 22 then break end end
+      pid = tonumber(pid)
+      local ppid, ticks, rss = tonumber(f[2]), (tonumber(f[12]) or 0) + (tonumber(f[13]) or 0), (tonumber(f[22]) or 0) * PAGE / 1048576
+      cur[pid] = ticks
+      if ppid ~= 2 and pid ~= 2 and not (rss == 0 and ticks == 0) then
+        local g = groups[name]
+        if not g then g = { n = name, c = 0, cpu = 0, mem = 0, pids = {} }; groups[name] = g; order[#order + 1] = g end
+        g.c = g.c + 1; g.mem = g.mem + rss; g.pids[#g.pids + 1] = pid
+        local d = prevProc[pid] and ticks - prevProc[pid] or 0
+        if dTotal > 0 and d > 0 then g.cpu = g.cpu + d / dTotal * 100 end
+        plist[#plist + 1] = ("[%d,\"%s\",\"%s\",%.1f,%.0f]"):format(pid, esc(name), f[1] or "?", dTotal > 0 and d / dTotal * 100 or 0, rss)
+      end
+    end
+  end
+  ph:close()
+  prevProc, prevTotal = cur, total
+  if not first then
+    local out = {}
+    for _, g in ipairs(order) do
+      out[#out + 1] = ('{"n":"%s","c":%d,"cpu":%.1f,"mem":%.0f,"pids":[%s]}'):format(esc(g.n), g.c, g.cpu, g.mem, table.concat(g.pids, ","))
+    end
+    local cs = {}
+    for k = 1, ncpu do cs[k] = ("%.2f"):format(cores[k] or 0) end
+    local up = tonumber((read("/proc/uptime") or "1"):match("^[%d.]+")) or 1
+    local dt = math.max(0.2, up - prevUp)
+    local dr, dw = diskNow(); local nr, nt = netNow()
+    local io_ = prevDisk and { (dr - prevDisk[1]) / dt, (dw - prevDisk[2]) / dt } or { 0, 0 }
+    local nw = prevNet and { (nr - prevNet[1]) / dt, (nt - prevNet[2]) / dt } or { 0, 0 }
+    io.write('{"cores":[', table.concat(cs, ","), '],"disk":[', ("%.0f,%.0f"):format(math.max(0, io_[1]), math.max(0, io_[2])), '],"net":[', ("%.0f,%.0f"):format(math.max(0, nw[1]), math.max(0, nw[2])), '],"apps":[', table.concat(out, ","), '],"procs":[', table.concat(plist, ","), ']}\n'); io.stdout:flush()
+  end
+  do local up = tonumber((read("/proc/uptime") or "1"):match("^[%d.]+")) or 1; prevUp = up; local a, b = diskNow(); prevDisk = { a, b }; local c, d = netNow(); prevNet = { c, d } end
+  first = false
+  os.execute("sleep 1")
+end

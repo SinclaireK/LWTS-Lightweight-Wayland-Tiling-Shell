@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+# lwts-portal: ScreenCast backend for xdg-desktop-portal (replaces the GNOME picker on niri).
+# The picker is drawn by the LWTS shell (overlays/CastPicker.qml): this daemon asks it over $XDG_RUNTIME_DIR/lwts-castpick.sock,
+# then starts the cast through niri's own org.gnome.Mutter.ScreenCast service and returns the PipeWire node to the app.
+# Python on purpose: luajit has no D-Bus binding (rules: Lua first, Python where Lua lacks a library).
+import gi, json, os, socket, sys, threading, time
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib
+
+NAME = "org.freedesktop.impl.portal.desktop.lwts"
+PATH = "/org/freedesktop/portal/desktop"
+MUTTER = "org.gnome.Mutter.ScreenCast"
+SOCK = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/run/user/%d" % os.getuid()), "lwts-castpick.sock")
+CURSOR = {1: 0, 2: 1, 4: 2}   # portal cursor_mode (hidden / embedded / metadata) -> Mutter cursor-mode
+
+def log(*a): print("lwts-portal:", *a, file=sys.stderr, flush=True)
+
+IFACE_XML = """<node>
+<interface name="org.freedesktop.impl.portal.ScreenCast">
+  <method name="CreateSession">
+    <arg type="o" name="handle" direction="in"/><arg type="o" name="session_handle" direction="in"/>
+    <arg type="s" name="app_id" direction="in"/><arg type="a{sv}" name="options" direction="in"/>
+    <arg type="u" name="response" direction="out"/><arg type="a{sv}" name="results" direction="out"/></method>
+  <method name="SelectSources">
+    <arg type="o" name="handle" direction="in"/><arg type="o" name="session_handle" direction="in"/>
+    <arg type="s" name="app_id" direction="in"/><arg type="a{sv}" name="options" direction="in"/>
+    <arg type="u" name="response" direction="out"/><arg type="a{sv}" name="results" direction="out"/></method>
+  <method name="Start">
+    <arg type="o" name="handle" direction="in"/><arg type="o" name="session_handle" direction="in"/>
+    <arg type="s" name="app_id" direction="in"/><arg type="s" name="parent_window" direction="in"/>
+    <arg type="a{sv}" name="options" direction="in"/>
+    <arg type="u" name="response" direction="out"/><arg type="a{sv}" name="results" direction="out"/></method>
+  <property name="AvailableSourceTypes" type="u" access="read"/>
+  <property name="AvailableCursorModes" type="u" access="read"/>
+  <property name="version" type="u" access="read"/>
+</interface></node>"""
+SESSION_XML = """<node><interface name="org.freedesktop.impl.portal.Session">
+  <method name="Close"/><signal name="Closed"/><property name="version" type="u" access="read"/></interface></node>"""
+REQUEST_XML = """<node><interface name="org.freedesktop.impl.portal.Request">
+  <method name="Close"/></interface></node>"""
+
+bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+sessions = {}      # session_handle -> {"app", "types", "multiple", "cursor", "mutter", "reg"}
+requests = {}      # request handle -> cancel Event
+
+def mcall(path, iface, method, args, reply):
+    return bus.call_sync(MUTTER, path, iface, method, args, GLib.VariantType(reply), Gio.DBusCallFlags.NONE, 10000, None)
+
+def stop_mutter(sess):
+    m = sess.pop("mutter", None)
+    if m:
+        try: mcall(m, MUTTER + ".Session", "Stop", None, "()")
+        except Exception as e: log("stop:", e)
+
+# ---- the picker (the shell) ----
+def ask_shell(req, cancel):
+    """One JSON line out, one back. Returns the reply dict, or None (cancelled / shell not there)."""
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(2); s.connect(SOCK); s.settimeout(0.5)
+    except Exception as e:
+        log("shell picker not reachable:", e); return None
+    try:
+        s.sendall((json.dumps(req) + "\n").encode())
+        buf = b""; end = time.time() + 300
+        while time.time() < end and not cancel.is_set():
+            try: chunk = s.recv(65536)
+            except socket.timeout: continue
+            if not chunk: break
+            buf += chunk
+            if b"\n" in buf: return json.loads(buf.split(b"\n", 1)[0])
+        try: s.sendall(b'{"cancel":true}\n')
+        except Exception: pass
+    except Exception as e:
+        log("picker:", e)
+    finally:
+        s.close()
+    return None
+
+# ---- the cast ----
+def start_cast(sess, picked):
+    """Mutter session + one stream per picked source; returns [(node_id, props)] or None."""
+    spath = mcall("/org/gnome/Mutter/ScreenCast", MUTTER, "CreateSession", GLib.Variant("(a{sv})", ({},)), "(o)").unpack()[0]
+    sess["mutter"] = spath
+    cm = GLib.Variant("u", CURSOR.get(sess.get("cursor", 2), 1))
+    nodes, subs, events = {}, [], []
+    for src in picked:
+        if src.get("type") == "window":
+            props = {"window-id": GLib.Variant("t", int(src["id"])), "cursor-mode": cm}
+            spath_s = mcall(spath, MUTTER + ".Session", "RecordWindow", GLib.Variant("(a{sv})", (props,)), "(o)").unpack()[0]; st = 2
+        else:
+            props = {"cursor-mode": cm}
+            spath_s = mcall(spath, MUTTER + ".Session", "RecordMonitor", GLib.Variant("(sa{sv})", (src["name"], props)), "(o)").unpack()[0]; st = 1
+        ev = threading.Event(); events.append(ev)
+        def cb(conn, sender, path, iface, sig, params, user, ev=ev, st=st, sp=spath_s):
+            nodes[sp] = (params.unpack()[0], st); ev.set()
+        subs.append(bus.signal_subscribe(MUTTER, MUTTER + ".Stream", "PipeWireStreamAdded", spath_s, None, Gio.DBusSignalFlags.NONE, cb, None))
+    try:
+        mcall(spath, MUTTER + ".Session", "Start", None, "()")
+        for ev in events:
+            if not ev.wait(6): log("no PipeWire node"); return None
+    finally:
+        for sid in subs: bus.signal_unsubscribe(sid)
+    return [(n, {"source_type": GLib.Variant("u", st)}) for n, st in nodes.values()]
+
+# ---- D-Bus objects ----
+def reg_session(handle):
+    node = Gio.DBusNodeInfo.new_for_xml(SESSION_XML)
+    def call(conn, sender, path, iface, method, params, inv):
+        if method == "Close":
+            close_session(handle); inv.return_value(None)
+    def prop(conn, sender, path, iface, name): return GLib.Variant("u", 1)
+    return bus.register_object(handle, node.interfaces[0], call, prop, None)
+
+def close_session(handle):
+    sess = sessions.pop(handle, None)
+    if not sess: return
+    stop_mutter(sess)
+    try: bus.unregister_object(sess["reg"])
+    except Exception: pass
+    try: bus.emit_signal(None, handle, "org.freedesktop.impl.portal.Session", "Closed", None)
+    except Exception: pass
+
+def reg_request(handle):
+    node = Gio.DBusNodeInfo.new_for_xml(REQUEST_XML)
+    ev = threading.Event(); requests[handle] = ev
+    def call(conn, sender, path, iface, method, params, inv):
+        ev.set(); inv.return_value(None)
+    return bus.register_object(handle, node.interfaces[0], call, None, None)
+
+def finish(inv, handle, rid, code, results):
+    try: bus.unregister_object(rid)
+    except Exception: pass
+    requests.pop(handle, None)
+    inv.return_value(GLib.Variant("(ua{sv})", (code, results)))
+
+def handle_start(inv, handle, shandle, app, options):
+    rid = reg_request(handle); cancel = requests[handle]
+    sess = sessions.get(shandle)
+    if not sess:
+        finish(inv, handle, rid, 2, {}); return
+    def work():
+        reply = ask_shell({"app": app, "types": sess.get("types", 1), "multiple": sess.get("multiple", False),
+                           "cursor": sess.get("cursor", 2)}, cancel)
+        if not reply or not reply.get("ok") or not reply.get("sources"):
+            GLib.idle_add(lambda: finish(inv, handle, rid, 1, {})); return
+        if reply.get("cursor") in CURSOR: sess["cursor"] = reply["cursor"]
+        try:
+            streams = start_cast(sess, reply["sources"][: (16 if sess.get("multiple") else 1)])
+        except Exception as e:
+            log("cast failed:", e); streams = None
+        if not streams:
+            stop_mutter(sess); GLib.idle_add(lambda: finish(inv, handle, rid, 2, {})); return
+        res = {"streams": GLib.Variant("a(ua{sv})", streams)}
+        GLib.idle_add(lambda: finish(inv, handle, rid, 0, res))
+    threading.Thread(target=work, daemon=True).start()
+
+def on_call(conn, sender, path, iface, method, params, inv):
+    try:
+        if method == "CreateSession":
+            handle, shandle, app, options = params.unpack()
+            reg = reg_session(shandle)
+            sessions[shandle] = {"app": app, "reg": reg, "types": 1, "multiple": False, "cursor": 2}
+            inv.return_value(GLib.Variant("(ua{sv})", (0, {"session_id": GLib.Variant("s", shandle.rsplit("/", 1)[-1])})))
+        elif method == "SelectSources":
+            handle, shandle, app, options = params.unpack()
+            s = sessions.get(shandle)
+            if s:
+                s["types"] = options.get("types", 1) or 1
+                s["multiple"] = bool(options.get("multiple", False))
+                s["cursor"] = options.get("cursor_mode", 2) or 2
+            inv.return_value(GLib.Variant("(ua{sv})", (0, {})))
+        elif method == "Start":
+            handle, shandle, app, parent, options = params.unpack()
+            handle_start(inv, handle, shandle, app, options)
+        else:
+            inv.return_dbus_error("org.freedesktop.DBus.Error.UnknownMethod", method)
+    except Exception as e:
+        log("call", method, e); inv.return_dbus_error("org.freedesktop.DBus.Error.Failed", str(e))
+
+def on_prop(conn, sender, path, iface, name):
+    return GLib.Variant("u", {"AvailableSourceTypes": 3, "AvailableCursorModes": 7, "version": 4}.get(name, 0))
+
+def main():
+    node = Gio.DBusNodeInfo.new_for_xml(IFACE_XML)
+    bus.register_object(PATH, node.interfaces[0], on_call, on_prop, None)
+    Gio.bus_own_name_on_connection(bus, NAME, Gio.BusNameOwnerFlags.NONE, lambda *a: log("up"), lambda *a: (log("name lost"), loop.quit()))
+    loop.run()
+
+loop = GLib.MainLoop()
+if __name__ == "__main__":
+    main()

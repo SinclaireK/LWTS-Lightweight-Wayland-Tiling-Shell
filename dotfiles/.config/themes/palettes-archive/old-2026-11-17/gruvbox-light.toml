@@ -1,0 +1,13 @@
+# Nothing-adapted (Claude, 2026-11-07): background near-black / paper, text near-white / near-black, the family accent kept as the one signal colour. Original: ../palettes-archive/originals/gruvbox-light.toml
+name = "Gruvbox Light"
+mode = "light"
+
+background = "#f5f2e0"
+foreground = "#1b1918"
+accent = "#b57614"
+tertiary = "#427b58"
+selection = "#dcd3c0"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#fbf1c7", "#cc241d", "#98971a", "#d79921", "#458588", "#b16286", "#689d6a", "#7c6f64"]
+ansi_bright = ["#928374", "#9d0006", "#79740e", "#b57614", "#076678", "#8f3f71", "#427b58", "#3c3836"]

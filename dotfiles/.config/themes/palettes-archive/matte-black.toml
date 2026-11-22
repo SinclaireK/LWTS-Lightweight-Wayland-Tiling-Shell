@@ -1,0 +1,13 @@
+name = "Matte Black"
+mode = "dark"
+# from Omarchy (MIT, (c) David Heinemeier Hansson), github.com/basecamp/omarchy themes/matte-black/colors.toml
+
+background = "#121212"
+foreground = "#bebebe"
+accent = "#e68e0d"
+tertiary = "#d35f5f"
+selection = "#2a2a2a"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#1e1e1e", "#d35f5f", "#ffc107", "#b91c1c", "#e68e0d", "#d35f5f", "#bebebe", "#bebebe"]
+ansi_bright = ["#555555", "#b91c1c", "#ffc107", "#b90a0a", "#f59e0b", "#b91c1c", "#eaeaea", "#bebebe"]

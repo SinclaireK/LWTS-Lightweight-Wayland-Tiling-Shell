@@ -1,0 +1,2 @@
+{ "id": "powertimer", "name": "Power timer", "version": "2", "contract": 1,
+  "service": "Service.qml", "settings": "Settings.qml", "tiles": "Tiles.qml", "panels": "Panels.qml", "bar": "Bar.qml" }

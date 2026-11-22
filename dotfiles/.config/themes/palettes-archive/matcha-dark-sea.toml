@@ -1,0 +1,12 @@
+name = "Matcha Dark Sea"
+mode = "dark"
+
+background = "#1b2224"
+foreground = "#f8f8f2"
+accent = "#2eb398"
+tertiary = "#66d9ef"
+selection = "#0d493d"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#273032", "#e2566a", "#33b165", "#e6db74", "#7976b7", "#ae81ff", "#2eb398", "#d8d8d2"]
+ansi_bright = ["#75715e", "#f0758a", "#a9c474", "#f2ecb6", "#9b98d6", "#c4a3ff", "#66d9ef", "#f8f8f2"]

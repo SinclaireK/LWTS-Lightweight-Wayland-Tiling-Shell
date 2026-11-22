@@ -1,0 +1,13 @@
+name = "Vantablack"
+mode = "dark"
+# from Omarchy (MIT, (c) David Heinemeier Hansson), github.com/basecamp/omarchy themes/vantablack/colors.toml
+
+background = "#000000"
+foreground = "#ffffff"
+accent = "#8d8d8d"
+tertiary = "#9b9b9b"
+selection = "#1a1a1a"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#1a1a1a", "#a4a4a4", "#b6b6b6", "#cecece", "#8d8d8d", "#9b9b9b", "#b0b0b0", "#ffffff"]
+ansi_bright = ["#505050", "#a4a4a4", "#b6b6b6", "#cecece", "#8d8d8d", "#9b9b9b", "#b0b0b0", "#ffffff"]

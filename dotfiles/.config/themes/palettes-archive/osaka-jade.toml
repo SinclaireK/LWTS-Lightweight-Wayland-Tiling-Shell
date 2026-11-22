@@ -1,0 +1,13 @@
+name = "Osaka Jade"
+mode = "dark"
+# from Omarchy (MIT, (c) David Heinemeier Hansson), github.com/basecamp/omarchy themes/osaka-jade/colors.toml
+
+background = "#111c18"
+foreground = "#c1c497"
+accent = "#509475"
+tertiary = "#d2689c"
+selection = "#32473b"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#23372b", "#ff5345", "#549e6a", "#459451", "#509475", "#d2689c", "#2dd5b7", "#c1c497"]
+ansi_bright = ["#81b8a8", "#db9f9c", "#63b07a", "#e5c736", "#acd4cf", "#75bbb3", "#8cd3cb", "#f7e8b2"]

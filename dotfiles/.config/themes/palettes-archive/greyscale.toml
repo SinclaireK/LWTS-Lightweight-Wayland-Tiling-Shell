@@ -1,0 +1,12 @@
+name = "Greyscale"
+mode = "dark"
+
+background = "#000000"
+foreground = "#bbbbbb"
+accent = "#ffffff"
+tertiary = "#909090"
+selection = "#303030"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#262626", "#a8a8a8", "#c4c4c4", "#d6d6d6", "#8a8a8a", "#9c9c9c", "#b4b4b4", "#bbbbbb"]
+ansi_bright = ["#505050", "#c8c8c8", "#dcdcdc", "#ececec", "#acacac", "#bcbcbc", "#d0d0d0", "#ffffff"]

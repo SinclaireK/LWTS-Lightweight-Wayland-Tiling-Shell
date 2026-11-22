@@ -1,0 +1,12 @@
+name = "Twilight"
+mode = "dark"
+
+background = "#141414"
+foreground = "#a7a7a7"
+accent = "#dad085"
+tertiary = "#cf6a4c"
+selection = "#3e3e3e"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#2f2f2f", "#cf6a4c", "#8f9d6a", "#f9ee98", "#7587a6", "#9b859d", "#afc4db", "#a7a7a7"]
+ansi_bright = ["#5f5a60", "#e0826a", "#a8b884", "#fbf3b6", "#8fa1c0", "#b3a0b5", "#c6d6e8", "#f8f8f8"]

@@ -1,0 +1,2 @@
+{ "id": "daynight", "name": "Night light", "version": "1", "contract": 1,
+  "service": "Service.qml", "settings": "Settings.qml", "tiles": "Tiles.qml" }

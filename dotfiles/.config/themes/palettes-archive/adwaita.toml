@@ -1,0 +1,12 @@
+name = "Adwaita"
+mode = "light"
+
+background = "#f6f5f4"
+foreground = "#2e3436"
+accent = "#1a5fb4"
+tertiary = "#9141ac"
+selection = "#deddda"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#241f31", "#c01c28", "#26a269", "#a2734c", "#1a5fb4", "#813d9c", "#0e8a9b", "#9a9996"]
+ansi_bright = ["#5e5c64", "#e01b24", "#2ec27e", "#c88800", "#1c71d8", "#9141ac", "#0aa5bd", "#f6f5f4"]

@@ -1,0 +1,13 @@
+name = "Starship"
+mode = "dark"
+# from Omarchy (MIT, (c) David Heinemeier Hansson), github.com/basecamp/omarchy themes/starship/colors.toml
+
+background = "#1c1c1e"
+foreground = "#f5f5f7"
+accent = "#ff9f0a"
+tertiary = "#ff8fa3"
+selection = "#3a3a3c"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#2c2c2e", "#ff5f4a", "#ff9f0a", "#ffc27a", "#8fb8de", "#ff8fa3", "#a6dcef", "#f5f5f7"]
+ansi_bright = ["#98989d", "#ff8373", "#ffb340", "#ffd8a8", "#b5d0ea", "#ffb3c1", "#cdeefa", "#ffffff"]

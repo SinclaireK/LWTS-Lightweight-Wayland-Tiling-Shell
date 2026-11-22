@@ -1,0 +1,13 @@
+name = "Hackerman"
+mode = "dark"
+# from Omarchy (MIT, (c) David Heinemeier Hansson), github.com/basecamp/omarchy themes/hackerman/colors.toml
+
+background = "#0b0c16"
+foreground = "#ddf7ff"
+accent = "#82fb9c"
+tertiary = "#86a7df"
+selection = "#1f253a"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#151828", "#50f872", "#4fe88f", "#50f7d4", "#829dd4", "#86a7df", "#7cf8f7", "#ddf7ff"]
+ansi_bright = ["#6a6e95", "#85ff9d", "#9cf7c2", "#a4ffec", "#c4d2ed", "#cddbf4", "#d1fffe", "#ddf7ff"]

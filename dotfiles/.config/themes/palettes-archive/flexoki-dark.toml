@@ -1,0 +1,12 @@
+name = "Flexoki Dark"
+mode = "dark"
+
+background = "#100f0f"
+foreground = "#cecdc3"
+accent = "#4385be"
+tertiary = "#8b7ec8"
+selection = "#343331"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#282726", "#af3029", "#66800b", "#ad8301", "#205ea6", "#a02f6f", "#24837b", "#878580"]
+ansi_bright = ["#575653", "#d14d41", "#879a39", "#d0a215", "#4385be", "#ce5d97", "#3aa99f", "#cecdc3"]

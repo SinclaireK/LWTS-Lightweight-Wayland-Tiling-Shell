@@ -1,0 +1,12 @@
+name = "One Dark"
+mode = "dark"
+
+background = "#282c34"
+foreground = "#abb2bf"
+accent = "#61afef"
+tertiary = "#c678dd"
+selection = "#3e4451"
+
+# black red green yellow blue magenta cyan white
+ansi = ["#3f4451", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd", "#56b6c2", "#abb2bf"]
+ansi_bright = ["#5c6370", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd", "#56b6c2", "#c8ccd4"]
